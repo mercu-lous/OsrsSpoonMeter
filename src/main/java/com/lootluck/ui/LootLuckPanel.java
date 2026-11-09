@@ -77,7 +77,8 @@ public final class LootLuckPanel extends PluginPanel
 			text.append("Observed: ").append(TIME_FORMAT.withZone(ZoneId.systemDefault()).format(observation.getObservedAtUtc())).append('\n');
 			text.append("Item stacks: ").append(observation.getItems().size()).append('\n');
 			Long actualGp = LootValuation.totalGpIfComplete(observation.getItems());
-			text.append("Loot value estimate: ").append(actualGp == null ? "Unavailable (missing price)" : gp(actualGp)).append("\n\n");
+			text.append("GE loot value estimate: ").append(actualGp == null ? "Unavailable (missing price)" : gp(actualGp)).append("\n\n");
+			boolean hasUntradeable = false;
 			for (LootItemPreview item : observation.getItems())
 			{
 				text.append(item.getQuantity()).append(" × ").append(item.getName());
@@ -85,10 +86,22 @@ public final class LootLuckPanel extends PluginPanel
 				{
 					text.append(" (#").append(item.getItemId()).append(')');
 				}
-				text.append(" @ ").append(item.getUnitPriceGp() == null ? "price unavailable" : gp(item.getUnitPriceGp()) + " each");
+				if ("UNTRADEABLE_NO_GE_SALE".equals(item.getPriceSource()))
+				{
+					hasUntradeable = true;
+					text.append(" @ 0 GP (untradeable)");
+				}
+				else
+				{
+					text.append(" @ ").append(item.getUnitPriceGp() == null ? "price unavailable" : gp(item.getUnitPriceGp()) + " each");
+				}
 				text.append('\n');
 			}
-			text.append("\nGross item value estimate only. Expected GP, luck, and kill count are not calculated yet.");
+			if (hasUntradeable)
+			{
+				text.append("\nUntradeable items count as 0 GE GP; use and alch value excluded.\n");
+			}
+			text.append("\nGross GE item estimate only. Expected GP, luck, and kill count are not calculated yet.");
 			eventText.setText(text.toString());
 			eventText.setCaretPosition(0);
 		});

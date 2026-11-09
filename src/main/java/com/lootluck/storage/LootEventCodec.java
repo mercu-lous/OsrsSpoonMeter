@@ -15,7 +15,7 @@ import java.util.UUID;
 /** Explicit versioned JSON avoids serializing RuneLite or JDK internals. */
 public final class LootEventCodec
 {
-	public static final int SCHEMA_VERSION = 2;
+	public static final int SCHEMA_VERSION = 3;
 	private final Gson gson;
 
 	public LootEventCodec(Gson gson)
@@ -42,6 +42,7 @@ public final class LootEventCodec
 		root.addProperty("valuationCapturedAtUtc", event.getObservedAtUtc().toString());
 		root.add("priceFeedTimestampUtc", JsonNull.INSTANCE);
 		root.addProperty("valuationStatus", actualGp == null ? "INCOMPLETE" : "COMPLETE");
+		root.addProperty("valuationMethod", "RUNELITE_GE_UNTRADEABLE_ZERO_V1");
 		root.add("actualGp", actualGp == null ? JsonNull.INSTANCE : gson.toJsonTree(actualGp));
 		root.add("expectedGp", JsonNull.INSTANCE);
 		root.addProperty("expectedSource", "NOT_APPLIED");
@@ -68,7 +69,7 @@ public final class LootEventCodec
 			throw new IllegalArgumentException("Empty loot event JSON");
 		}
 		int version = requiredInt(root, "schemaVersion");
-		if (version != 1 && version != SCHEMA_VERSION)
+		if (version != 1 && version != 2 && version != SCHEMA_VERSION)
 		{
 			throw new IllegalArgumentException("Unsupported loot event schema");
 		}
@@ -95,7 +96,7 @@ public final class LootEventCodec
 			requiredString(root, "source"), requiredString(root, "eventType"),
 			requiredInt(root, "combatLevel"), requiredInt(root, "reportedAmount"),
 			requiredInt(root, "clientTick"), items);
-		if (version == SCHEMA_VERSION && !java.util.Objects.equals(event.getActualGp(), optionalLong(root, "actualGp")))
+		if (version >= 2 && !java.util.Objects.equals(event.getActualGp(), optionalLong(root, "actualGp")))
 		{
 			throw new IllegalArgumentException("Loot event total does not match item prices");
 		}

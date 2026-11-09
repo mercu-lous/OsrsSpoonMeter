@@ -22,6 +22,7 @@ import java.util.concurrent.RejectedExecutionException;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.ItemComposition;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.config.RuneLiteConfig;
@@ -120,11 +121,14 @@ public class LootLuckPlugin extends Plugin
 		for (ItemStack item : event.getItems())
 		{
 			long price = itemManager.getItemPriceWithSource(item.getId(), wikiPriceSetting);
-			String name = itemManager.getItemComposition(item.getId()).getName();
+			ItemComposition composition = itemManager.getItemComposition(item.getId());
+			String name = composition == null ? null : composition.getName();
+			boolean untradeable = composition != null && !composition.isTradeable();
 			items.add(new LootItemPreview(item.getId(), item.getQuantity(),
 				name == null || name.isEmpty() ? "Item #" + item.getId() : name,
-				price > 0 ? price : null,
-				price > 0 ? (wikiPriceSetting ? "RUNELITE_WIKI_ADJUSTED" : "RUNELITE_JAGEX") : "UNAVAILABLE"));
+				price > 0 ? price : untradeable ? 0L : null,
+				price > 0 ? (wikiPriceSetting ? "RUNELITE_WIKI_ADJUSTED" : "RUNELITE_JAGEX")
+					: untradeable ? "UNTRADEABLE_NO_GE_SALE" : "UNAVAILABLE"));
 		}
 		LootEventPreview observation = new LootEventPreview(
 			event.getName(),

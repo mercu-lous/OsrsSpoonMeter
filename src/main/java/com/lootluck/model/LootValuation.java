@@ -17,7 +17,7 @@ public final class LootValuation
 			for (LootItemPreview item : items)
 			{
 				Long price = item.getUnitPriceGp();
-				if (price == null || price <= 0 || item.getQuantity() < 0)
+				if (price == null || price < 0 || item.getQuantity() < 0)
 				{
 					return null;
 				}

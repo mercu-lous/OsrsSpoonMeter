@@ -40,9 +40,10 @@ public class LootEventCodecTest
 		assertEquals(event.getObservedAtUtc(), restored.getObservedAtUtc());
 		assertEquals("Maggot King", restored.getSource());
 		assertEquals("NPC", restored.getEventType());
-		assertTrue(json.contains("\"schemaVersion\":2"));
+		assertTrue(json.contains("\"schemaVersion\":3"));
 		assertTrue(json.contains("\"attributionStatus\":\"UNATTRIBUTED\""));
 		assertTrue(json.contains("\"valuationStatus\":\"COMPLETE\""));
+		assertTrue(json.contains("\"valuationMethod\":\"RUNELITE_GE_UNTRADEABLE_ZERO_V1\""));
 		assertTrue(json.contains("\"actualGp\":9000"));
 		assertTrue(json.contains("\"valuationCapturedAtUtc\":\"2026-11-09T04:54:25Z\""));
 		assertTrue(json.contains("\"priceFeedTimestampUtc\":null"));
@@ -74,6 +75,33 @@ public class LootEventCodecTest
 		assertTrue(json.contains("\"actualGp\":null"));
 		assertTrue(json.contains("\"valuationStatus\":\"INCOMPLETE\""));
 		assertEquals(null, codec.decode(json).getActualGp());
+	}
+
+	@Test
+	public void countsUntradeableItemsAsZeroGeValue()
+	{
+		SavedLootEvent event = new SavedLootEvent("a798a7a2-7b4b-4d82-8e2b-d16a42db942b",
+			ProfileIds.fromRuneScapeProfileKey("account-one"), "session-1",
+			Instant.parse("2026-11-09T04:54:25Z"), "Maggot King", "NPC", 0, 1, 42,
+			Arrays.asList(new LootItemPreview(33627, 1, "Dull ancient medal", 0L, "UNTRADEABLE_NO_GE_SALE"),
+				new LootItemPreview(33628, 4, "Stymphike tartare", 0L, "UNTRADEABLE_NO_GE_SALE")));
+		String json = codec.encode(event);
+		assertTrue(json.contains("\"actualGp\":0"));
+		assertTrue(json.contains("\"valuationStatus\":\"COMPLETE\""));
+		assertEquals(Long.valueOf(0), codec.decode(json).getActualGp());
+	}
+
+	@Test
+	public void readsPriorSchemaTwoWithMissingPricesUnchanged()
+	{
+		String prior = "{\"schemaVersion\":2,\"eventId\":\"a798a7a2-7b4b-4d82-8e2b-d16a42db942b\","
+			+ "\"profileId\":\"profile\",\"sessionId\":\"session\",\"observedAtUtc\":\"2026-11-09T05:23:32Z\","
+			+ "\"source\":\"Maggot King\",\"eventType\":\"NPC\",\"combatLevel\":0,\"reportedAmount\":1,"
+			+ "\"clientTick\":42,\"actualGp\":null,\"items\":[{\"itemId\":33627,\"quantity\":1,"
+			+ "\"name\":\"Dull ancient medal\",\"unitPriceGp\":null,\"priceSource\":\"UNAVAILABLE\"}]}";
+		SavedLootEvent restored = codec.decode(prior);
+		assertEquals(null, restored.getItems().get(0).getUnitPriceGp());
+		assertEquals(null, restored.getActualGp());
 	}
 
 	@Test(expected = IllegalArgumentException.class)
