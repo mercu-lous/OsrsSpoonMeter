@@ -100,6 +100,23 @@ public final class LootLuckPanel extends PluginPanel
 		});
 	}
 
+	public void showNoLootConfirmation(RewardClickCandidate click, int messageTick)
+	{
+		SwingUtilities.invokeLater(() -> {
+			eventText.setText("Latest reward\n\nMethod: Take-eggs\nOutcome: No loot\n"
+				+ "Confirmed by the game's egg-pop message.\n\n"
+				+ "No normal-loot expected GP is applied to this choice.");
+			rewardText.setText("Take-eggs no-loot confirmed\nClick tick: " + click.getClientTick()
+				+ "; message tick: " + messageTick + "\nTarget ID: #" + click.getTargetId());
+		});
+	}
+
+	public void showNoLootMessageUnmatched(String reason)
+	{
+		SwingUtilities.invokeLater(() -> rewardText.setText("Take-eggs no-loot message observed.\n"
+			+ reason + "\nNot counted or saved."));
+	}
+
 	public void showStorage(String profile, long count, String status)
 	{
 		SwingUtilities.invokeLater(() -> storageText.setText("Profile: " + profile +
@@ -139,7 +156,9 @@ public final class LootLuckPanel extends PluginPanel
 		StringBuilder text = new StringBuilder();
 		text.append("\nTiming-linked Open-stomach rewards: ").append(stats.getObservedNormalRewards());
 		text.append("\nValued normal rewards: ").append(stats.getValuedNormalRewards());
-		text.append("\nObserved Take-eggs loot: ").append(stats.getObservedEggRewards());
+		text.append("\nTake-eggs loot-linked: ").append(stats.getObservedEggRewards());
+		text.append("\nConfirmed no-loot Take-eggs: ")
+			.append(rewardSummary.getConfirmedNoLoot(scope));
 		if (stats.getNetLuckGp() != null)
 		{
 			text.append("\nConverted loot: ").append(gp(stats.getConvertedGp()));

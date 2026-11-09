@@ -95,6 +95,36 @@ public class RewardStatisticsTest
 		assertEquals(1000, today.getExpectedGp());
 	}
 
+	@Test
+	public void noLootConfirmationCountsOnceEvenWithTertiaryLootCallback()
+	{
+		SavedLootEvent tertiary = event(1, 1, "TAKE_EGGS", 100, 102, 450, 0, null);
+		NoLootConfirmation confirmed = new NoLootConfirmation(tertiary.getRewardClick(), "session",
+			tertiary.getObservedAtUtc(), 102, "GAMEMESSAGE");
+		RewardSummary summary = RewardSummary.fromObservations(Collections.singletonList(tertiary),
+			Arrays.asList(confirmed, confirmed), "session", Instant.ofEpochSecond(300), ZoneOffset.UTC);
+		assertEquals(0, summary.get(RewardScope.ALL_TIME).getObservedEggRewards());
+		assertEquals(1, summary.getConfirmedNoLoot(RewardScope.ALL_TIME));
+		assertEquals(1, summary.getConfirmedNoLoot(RewardScope.CURRENT_RUN));
+		assertEquals(1, summary.getConfirmedNoLoot(RewardScope.TODAY));
+	}
+
+	@Test
+	public void noLootConfirmationUsesItsOwnSessionAndCalendarTime()
+	{
+		RewardClickCandidate click = new RewardClickCandidate(id("no-loot-click"), PROFILE,
+			"TAKE_EGGS", 100, 42, Instant.parse("2026-11-09T05:59:58Z"));
+		NoLootConfirmation confirmed = new NoLootConfirmation(click, "previous-run",
+			Instant.parse("2026-11-09T05:59:59Z"), 102, "SPAM");
+		RewardSummary summary = RewardSummary.fromObservations(Collections.emptyList(),
+			Collections.singletonList(confirmed), "current-run", Instant.parse("2026-11-09T15:00:00Z"),
+			ZoneId.of("America/Chicago"));
+		assertEquals(1, summary.getConfirmedNoLoot(RewardScope.ALL_TIME));
+		assertEquals(0, summary.getConfirmedNoLoot(RewardScope.CURRENT_RUN));
+		assertEquals(0, summary.getConfirmedNoLoot(RewardScope.TODAY));
+		assertEquals(1, summary.getConfirmedNoLoot(RewardScope.THIS_MONTH));
+	}
+
 	private static SavedLootEvent eventAt(int eventNumber, int clickNumber, Instant time,
 		long actualGp, Long expectedGp)
 	{

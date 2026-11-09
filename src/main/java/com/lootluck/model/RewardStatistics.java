@@ -3,6 +3,7 @@ package com.lootluck.model;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -44,6 +45,12 @@ public final class RewardStatistics
 	public static RewardStatistics summarize(List<SavedLootEvent> events,
 		Predicate<SavedLootEvent> includeReward)
 	{
+		return summarize(events, includeReward, Collections.emptySet());
+	}
+
+	public static RewardStatistics summarize(List<SavedLootEvent> events,
+		Predicate<SavedLootEvent> includeReward, Set<String> confirmedNoLootClickIds)
+	{
 		Map<String, List<SavedLootEvent>> groups = new LinkedHashMap<>();
 		for (SavedLootEvent event : events)
 		{
@@ -70,7 +77,10 @@ public final class RewardStatistics
 			String method = group.get(0).getRewardClick().getMethod();
 			if ("TAKE_EGGS".equals(method))
 			{
-				eggs++;
+				if (!confirmedNoLootClickIds.contains(group.get(0).getRewardClick().getClickId()))
+				{
+					eggs++;
+				}
 				continue;
 			}
 			if (!"OPEN_STOMACH".equals(method))

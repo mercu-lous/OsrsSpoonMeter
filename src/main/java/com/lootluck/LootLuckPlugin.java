@@ -7,11 +7,13 @@ import com.lootluck.model.ExpectedValueSnapshot;
 import com.lootluck.model.LootItemPreview;
 import com.lootluck.model.MaggotKingConversionCatalog;
 import com.lootluck.model.MaggotKingExpectedValueService;
+import com.lootluck.model.NoLootConfirmation;
 import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.RewardSummary;
 import com.lootluck.model.SavedLootEvent;
 import com.lootluck.storage.LootEventCodec;
 import com.lootluck.storage.LootEventStore;
+import com.lootluck.storage.NoLootConfirmationCodec;
 import com.lootluck.storage.ProfileIds;
 import com.lootluck.ui.LootLuckPanel;
 import java.awt.Color;
@@ -31,6 +33,7 @@ import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ItemComposition;
+import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.client.config.ConfigManager;
@@ -86,6 +89,7 @@ public class LootLuckPlugin extends Plugin
 	private String sessionId;
 	private volatile String currentProfileId;
 	private RewardClickCandidate recentRewardClick; // RuneLite client thread only.
+	private int lastNoLootMessageTick = -1; // RuneLite client thread only.
 	private ZoneId calendarZone; // RuneLite client thread only.
 	private LocalDate calendarDate; // RuneLite client thread only.
 
@@ -117,6 +121,7 @@ public class LootLuckPlugin extends Plugin
 		storageExecutor.shutdown(); // Allow queued event writes to finish without blocking shutdown.
 		currentProfileId = null;
 		recentRewardClick = null;
+		lastNoLootMessageTick = -1;
 		panel = null;
 		navigationButton = null;
 		log.debug("Loot Luck Tracker stopped");
@@ -244,9 +249,82 @@ public class LootLuckPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onChatMessage(ChatMessage event)
+	{
+		if (panel == null || event.getMessage() == null
+			|| !NoLootConfirmation.isNoLootText(Text.removeTags(event.getMessage())))
+		{
+			return;
+		}
+		int messageTick = client.getTickCount();
+		if (messageTick == lastNoLootMessageTick)
+		{
+			return;
+		}
+		lastNoLootMessageTick = messageTick;
+		String chatType = event.getType() == null ? "UNKNOWN" : event.getType().name();
+		if (!NoLootConfirmation.isSupportedChatType(chatType))
+		{
+			panel.showNoLootMessageUnmatched("Unexpected chat type: " + chatType);
+			return;
+		}
+		String profileKey = configManager.getRSProfileKey();
+		if (profileKey == null || profileKey.isEmpty())
+		{
+			panel.showNoLootMessageUnmatched("No active profile.");
+			return;
+		}
+		String profileId = ProfileIds.fromRuneScapeProfileKey(profileKey);
+		RewardClickCandidate click = recentRewardClick;
+		if (click == null || !"TAKE_EGGS".equals(click.getMethod())
+			|| !click.matches(profileId, messageTick))
+		{
+			panel.showNoLootMessageUnmatched("No matching Take-eggs click within five ticks.");
+			return;
+		}
+		NoLootConfirmation confirmation = new NoLootConfirmation(click, sessionId,
+			Instant.now(), messageTick, chatType);
+		panel.showNoLootConfirmation(click, messageTick);
+		ZoneId summaryZone = resolveCalendarZone();
+		LootLuckPanel targetPanel = panel;
+		targetPanel.showStorage(shortProfileId(profileId), -1, "Saving no-loot confirmation...");
+		submitStorageTask(() -> {
+			try
+			{
+				boolean inserted = getStorage().saveConfirmation(confirmation);
+				long count = getStorage().count(profileId);
+				RewardSummary statistics = readStatistics(profileId, summaryZone);
+				if (profileId.equals(currentProfileId))
+				{
+					if (statistics == null)
+					{
+						targetPanel.showStatisticsUnavailable();
+					}
+					else
+					{
+						targetPanel.showStatistics(statistics);
+					}
+					targetPanel.showStorage(shortProfileId(profileId), count,
+						inserted ? "No-loot confirmation saved" : "No-loot confirmation already saved");
+				}
+			}
+			catch (Exception exception)
+			{
+				log.warn("Could not save Maggot King no-loot confirmation", exception);
+				if (profileId.equals(currentProfileId))
+				{
+					targetPanel.showStorage(shortProfileId(profileId), -1,
+						"No-loot save failed; check RuneLite log");
+				}
+			}
+		});
+	}
+
+	@Subscribe
 	public void onRuneScapeProfileChanged(RuneScapeProfileChanged event)
 	{
 		recentRewardClick = null;
+		lastNoLootMessageTick = -1;
 		if (panel != null)
 		{
 			panel.clearObservation();
@@ -337,7 +415,8 @@ public class LootLuckPlugin extends Plugin
 	{
 		if (storage == null)
 		{
-			storage = new LootEventStore(getPluginDirectory(), new LootEventCodec(gson));
+			storage = new LootEventStore(getPluginDirectory(), new LootEventCodec(gson),
+				new NoLootConfirmationCodec(gson));
 		}
 		return storage;
 	}
