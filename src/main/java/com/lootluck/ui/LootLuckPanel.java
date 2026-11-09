@@ -16,6 +16,7 @@ public final class LootLuckPanel extends PluginPanel
 {
 	private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z");
 	private final JTextArea eventText = new JTextArea();
+	private final JTextArea storageText = new JTextArea();
 
 	public LootLuckPanel()
 	{
@@ -25,8 +26,24 @@ public final class LootLuckPanel extends PluginPanel
 		eventText.setLineWrap(true);
 		eventText.setWrapStyleWord(true);
 		eventText.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-		eventText.setText("Waiting for a RuneLite Loot Tracker event.\n\nThis preview is not saved yet. GP values and kill attribution are coming next.");
+		eventText.setText("Waiting for a Maggot King loot event.\n\nGP values and kill attribution are coming next.");
 		add(new JScrollPane(eventText), BorderLayout.CENTER);
+		storageText.setEditable(false);
+		storageText.setLineWrap(true);
+		storageText.setWrapStyleWord(true);
+		storageText.setText("Loading profile...");
+		add(storageText, BorderLayout.SOUTH);
+	}
+
+	public void clearObservation()
+	{
+		SwingUtilities.invokeLater(() -> eventText.setText("Waiting for a Maggot King loot event on this profile."));
+	}
+
+	public void showStorage(String profile, long count, String status)
+	{
+		SwingUtilities.invokeLater(() -> storageText.setText("Profile: " + profile +
+			"\nSaved events: " + (count < 0 ? "—" : count) + "\n" + status));
 	}
 
 	public void showObservation(LootEventPreview observation, boolean showItemIds)
@@ -47,7 +64,7 @@ public final class LootLuckPanel extends PluginPanel
 				}
 				text.append('\n');
 			}
-			text.append("\nPreview only: no GP calculation, kill count, or persistence yet.");
+			text.append("\nNo GP calculation or kill count yet.");
 			eventText.setText(text.toString());
 			eventText.setCaretPosition(0);
 		});
