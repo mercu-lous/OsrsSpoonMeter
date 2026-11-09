@@ -9,6 +9,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import javax.swing.JLabel;
+import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
@@ -18,6 +19,7 @@ public final class LootLuckPanel extends PluginPanel
 {
 	private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z");
 	private final JTextArea eventText = new JTextArea();
+	private final JTextArea rewardText = new JTextArea();
 	private final JTextArea storageText = new JTextArea();
 
 	public LootLuckPanel()
@@ -30,16 +32,33 @@ public final class LootLuckPanel extends PluginPanel
 		eventText.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
 		eventText.setText("Waiting for a Maggot King loot event.\n\nGP values and kill attribution are coming next.");
 		add(new JScrollPane(eventText), BorderLayout.CENTER);
+		JPanel statusPanel = new JPanel(new BorderLayout(0, 8));
+		rewardText.setEditable(false);
+		rewardText.setLineWrap(true);
+		rewardText.setWrapStyleWord(true);
+		rewardText.setText("Reward option click: waiting");
+		statusPanel.add(rewardText, BorderLayout.NORTH);
 		storageText.setEditable(false);
 		storageText.setLineWrap(true);
 		storageText.setWrapStyleWord(true);
 		storageText.setText("Loading profile...");
-		add(storageText, BorderLayout.SOUTH);
+		statusPanel.add(storageText, BorderLayout.SOUTH);
+		add(statusPanel, BorderLayout.SOUTH);
 	}
 
 	public void clearObservation()
 	{
-		SwingUtilities.invokeLater(() -> eventText.setText("Waiting for a Maggot King loot event on this profile."));
+		SwingUtilities.invokeLater(() -> {
+			eventText.setText("Waiting for a Maggot King loot event on this profile.");
+			rewardText.setText("Reward option click: waiting");
+		});
+	}
+
+	public void showRewardOption(String option, String target, int targetId, int clientTick)
+	{
+		SwingUtilities.invokeLater(() -> rewardText.setText("Reward option clicked: " + option +
+			"\nTarget: " + target + " (#" + targetId + ")\nClient tick: " + clientTick +
+			"\nClick observed only; reward not yet confirmed."));
 	}
 
 	public void showStorage(String profile, long count, String status)

@@ -22,6 +22,7 @@ import java.util.concurrent.RejectedExecutionException;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.config.RuneLiteConfig;
 import net.runelite.client.eventbus.Subscribe;
@@ -33,6 +34,7 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.loottracker.LootReceived;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.NavigationButton;
+import net.runelite.client.util.Text;
 
 @Slf4j
 @PluginDescriptor(
@@ -168,6 +170,24 @@ public class LootLuckPlugin extends Plugin
 			}
 		});
 		log.debug("Observed Maggot King loot event with {} item stacks", items.size());
+	}
+
+	@Subscribe
+	public void onMenuOptionClicked(MenuOptionClicked event)
+	{
+		if (panel == null || event.getMenuOption() == null || event.getMenuTarget() == null)
+		{
+			return;
+		}
+		String option = Text.standardize(event.getMenuOption());
+		String target = Text.standardize(event.getMenuTarget());
+		if (!("open-stomach".equals(option) || "take-eggs".equals(option)) || !target.contains("maggot king"))
+		{
+			return;
+		}
+		panel.showRewardOption(Text.removeTags(event.getMenuOption()),
+			Text.removeTags(event.getMenuTarget()), event.getId(), client.getTickCount());
+		log.debug("Observed Maggot King reward option click: {} (target id {})", option, event.getId());
 	}
 
 	@Subscribe
