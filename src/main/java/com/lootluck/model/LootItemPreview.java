@@ -4,11 +4,22 @@ public final class LootItemPreview
 {
 	private final int itemId;
 	private final int quantity;
+	private final String name;
+	private final Long unitPriceGp;
+	private final String priceSource;
 
 	public LootItemPreview(int itemId, int quantity)
 	{
+		this(itemId, quantity, "Item #" + itemId, null, "UNAVAILABLE");
+	}
+
+	public LootItemPreview(int itemId, int quantity, String name, Long unitPriceGp, String priceSource)
+	{
 		this.itemId = itemId;
 		this.quantity = quantity;
+		this.name = name;
+		this.unitPriceGp = unitPriceGp;
+		this.priceSource = priceSource;
 	}
 
 	public int getItemId()
@@ -19,5 +30,20 @@ public final class LootItemPreview
 	public int getQuantity()
 	{
 		return quantity;
+	}
+
+	public String getName()
+	{
+		return name;
+	}
+
+	public Long getUnitPriceGp()
+	{
+		return unitPriceGp;
+	}
+
+	public String getPriceSource()
+	{
+		return priceSource;
 	}
 }

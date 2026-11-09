@@ -46,4 +46,5 @@ public final class SavedLootEvent
 	public int getReportedAmount() { return reportedAmount; }
 	public int getClientTick() { return clientTick; }
 	public List<LootItemPreview> getItems() { return items; }
+	public Long getActualGp() { return LootValuation.totalGpIfComplete(items); }
 }

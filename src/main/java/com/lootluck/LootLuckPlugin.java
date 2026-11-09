@@ -23,9 +23,11 @@ import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.config.RuneLiteConfig;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.RuneScapeProfileChanged;
 import net.runelite.client.game.ItemStack;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.plugins.loottracker.LootReceived;
@@ -57,6 +59,12 @@ public class LootLuckPlugin extends Plugin
 
 	@Inject
 	private Gson gson;
+
+	@Inject
+	private ItemManager itemManager;
+
+	@Inject
+	private RuneLiteConfig runeLiteConfig;
 
 	private LootLuckPanel panel;
 	private NavigationButton navigationButton;
@@ -106,9 +114,15 @@ public class LootLuckPlugin extends Plugin
 		}
 
 		List<LootItemPreview> items = new ArrayList<>();
+		boolean wikiPriceSetting = runeLiteConfig.useWikiItemPrices();
 		for (ItemStack item : event.getItems())
 		{
-			items.add(new LootItemPreview(item.getId(), item.getQuantity()));
+			long price = itemManager.getItemPriceWithSource(item.getId(), wikiPriceSetting);
+			String name = itemManager.getItemComposition(item.getId()).getName();
+			items.add(new LootItemPreview(item.getId(), item.getQuantity(),
+				name == null || name.isEmpty() ? "Item #" + item.getId() : name,
+				price > 0 ? price : null,
+				price > 0 ? (wikiPriceSetting ? "RUNELITE_WIKI_ADJUSTED" : "RUNELITE_JAGEX") : "UNAVAILABLE"));
 		}
 		LootEventPreview observation = new LootEventPreview(
 			event.getName(),

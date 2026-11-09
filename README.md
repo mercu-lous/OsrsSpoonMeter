@@ -7,9 +7,11 @@ An early RuneLite plugin for comparing boss loot with expected gross GP value. T
 - Adds a **Loot Luck Tracker** sidebar button and panel.
 - Observes RuneLite Loot Tracker's `LootReceived` event. The user confirmed a `Maggot King` / `NPC` event with item IDs `33627` and `33628` in-game on November 8, 2026.
 - Saves each new Maggot King event's item IDs and quantities, UTC timestamp, event ID, client tick, RuneLite event metadata fields, and session ID. The sidebar shows a per-profile saved-event count.
+- Snapshots each item's name and RuneLite price when the event arrives, including which RuneLite price setting was used. Shows an estimated gross loot value only when every item has a price. A zero or missing price remains unavailable.
+- Records when the valuation was captured; RuneLite does not expose the underlying price-feed timestamp through this lookup, so that field remains unavailable.
 - Stores separate files under RuneLite's `plugin-data/loot_luck_tracker/profiles/<hashed-profile-id>/events/` directory. The original RuneScape profile key and account name are not saved. A session currently starts when the plugin starts and ends when it stops.
 
-The screenshot from the first prototype was a temporary preview; that earlier event was not saved. The new storage code only captures events received after this update is running. Event files are written on a dedicated worker using a temporary file and atomic move. The panel does not yet price items, fetch boss expected values, calculate luck, or infer a kill count. Reward-method attribution and repeated-event behavior still need in-game observation. Identical callbacks do not yet have a RuneLite-provided stable ID, so callback-level deduplication remains unresolved; a stored event ID prevents writing the same record twice.
+The screenshot from the first prototype was a temporary preview; that earlier event was not saved. Event files are written on a dedicated worker using a temporary file and atomic move. Records written before the price update remain unvalued; they are not silently repriced. New records use schema version 2, while version 1 remains readable. The panel does not yet fetch boss expected values, calculate luck, or infer a kill count. Reward-method attribution and repeated-event behavior still need in-game observation. Identical callbacks do not yet have a RuneLite-provided stable ID, so callback-level deduplication remains unresolved; a stored event ID prevents writing the same record twice.
 
 ## Run locally
 
@@ -28,11 +30,11 @@ In IntelliJ, open this folder as a Gradle project, set the Gradle JVM to JDK 17 
 
 ## Verification and next increments
 
-Verified locally: the official template was retrieved, its Gradle wrapper downloaded, and `clean test` compiled successfully with JDK 21. The development client started and logged that `LootLuckPlugin` was running with its `LootReceived` subscription registered. RuneLite also logged a Java 21 reflection warning during startup. The user confirmed the sidebar and a Maggot King event in-game on November 8, 2026. The new persistence code passes its JSON format and profile-key tests, but still needs an in-game restart test.
+Verified locally: the official template was retrieved, its Gradle wrapper downloaded, and `clean test` compiled successfully with JDK 21. The development client started and logged that `LootLuckPlugin` was running with its `LootReceived` subscription registered. RuneLite also logged a Java 21 reflection warning during startup. The user confirmed the sidebar and a saved Maggot King event in-game on November 8, 2026. The on-disk JSON matches the screenshot. The price snapshot code passes tests for complete, missing, and legacy values; its in-game display still needs a check after restarting the development client.
 
-1. Restart the development client with this version, collect a Maggot King reward, and confirm the panel says **Event saved** and the count increases. Restart once more and confirm the count persists.
-2. Observe whether normal and Take-eggs rewards emit one or multiple events. Confirm whether repeated callbacks occur before treating an event as a kill.
-3. Snapshot item prices and a clearly labeled expected-GP input; calculate GP delta only for confirmed attribution.
+1. Restart the development client with this version, collect a Maggot King reward, and confirm the panel shows an estimated loot value or explicitly says the price is unavailable. Confirm **Event saved** and the count increases.
+2. Restart once more and confirm the count persists. Observe whether normal and Take-eggs rewards emit one or multiple events; Take-eggs can yield no loot, so we cannot assume every kill is represented by a loot event.
+3. Add a clearly labeled expected-GP source and calculate GP delta only for confirmed reward attribution.
 4. Add session and time-window statistics, then boss rankings, and expand boss coverage.
 
 No live Wiki expected value is used yet. Values in the context file are illustrative or unverified.
