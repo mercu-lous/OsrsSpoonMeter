@@ -3,6 +3,9 @@ package com.lootluck.storage;
 import com.google.gson.Gson;
 import com.lootluck.model.ConversionComponent;
 import com.lootluck.model.ConversionQuote;
+import com.lootluck.model.ExpectedValueSnapshot;
+import com.lootluck.model.MaggotKingConversionCatalog;
+import com.lootluck.model.MaggotKingExpectedValueService;
 import com.lootluck.model.LootItemPreview;
 import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.SavedLootEvent;
@@ -10,6 +13,8 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -43,7 +48,7 @@ public class LootEventCodecTest
 		assertEquals(event.getObservedAtUtc(), restored.getObservedAtUtc());
 		assertEquals("Maggot King", restored.getSource());
 		assertEquals("NPC", restored.getEventType());
-		assertTrue(json.contains("\"schemaVersion\":6"));
+		assertTrue(json.contains("\"schemaVersion\":7"));
 		assertTrue(json.contains("\"attributionStatus\":\"UNATTRIBUTED\""));
 		assertTrue(json.contains("\"valuationStatus\":\"COMPLETE\""));
 		assertTrue(json.contains("\"valuationMethod\":\"RUNELITE_DIRECT_GE_UNTRADEABLE_ZERO_V1\""));
@@ -115,7 +120,7 @@ public class LootEventCodecTest
 		assertEquals(3, restored.getItems().get(0).getConversionQuote().getComponents().size());
 		assertEquals(Long.valueOf(10000), restored.getItems().get(0).getConversionQuote()
 			.getComponents().get(0).getUnitPriceGp());
-		assertEquals(null, codec.decode(json.replace("\"schemaVersion\":6", "\"schemaVersion\":5"))
+		assertEquals(null, codec.decode(json.replace("\"schemaVersion\":7", "\"schemaVersion\":5"))
 			.getConvertedGp());
 	}
 
@@ -153,14 +158,41 @@ public class LootEventCodecTest
 		assertTrue(json.contains("\"rewardMethod\":\"OPEN_STOMACH\""));
 		assertEquals(click.getClickId(), codec.decode(json).getRewardClick().getClickId());
 		assertEquals(339, codec.decode(json).getRewardClick().getClientTick());
-		assertEquals(click.getClickId(), codec.decode(json.replace("\"schemaVersion\":6", "\"schemaVersion\":4"))
+		assertEquals(click.getClickId(), codec.decode(json.replace("\"schemaVersion\":7", "\"schemaVersion\":4"))
 			.getRewardClick().getClickId());
+	}
+
+	@Test
+	public void freezesExpectedValueAndItsPriceInputs()
+	{
+		String profile = ProfileIds.fromRuneScapeProfileKey("account-one");
+		RewardClickCandidate click = new RewardClickCandidate("d5f88875-332c-429c-8adc-59b44b669a41",
+			profile, "OPEN_STOMACH", 100, 42, Instant.parse("2026-11-09T09:00:00Z"));
+		Map<Integer, Long> prices = new LinkedHashMap<>();
+		prices.put(33636, 123456789L);
+		prices.put(33631, 50000000L);
+		ExpectedValueSnapshot expected = new ExpectedValueSnapshot(489466L,
+			MaggotKingExpectedValueService.SOURCE_VERSION, MaggotKingExpectedValueService.SOURCE_URL,
+			MaggotKingConversionCatalog.VERSION, "RUNELITE_WIKI_ADJUSTED",
+			Instant.parse("2026-11-09T09:00:01Z"), prices);
+		SavedLootEvent event = new SavedLootEvent("a798a7a2-7b4b-4d82-8e2b-d16a42db942b",
+			profile, "session-1", Instant.parse("2026-11-09T09:00:01Z"),
+			"Maggot King", "NPC", 0, 1, 102,
+			Arrays.asList(new LootItemPreview(33627, 1, "Dull ancient medal", 0L,
+				"UNTRADEABLE_NO_GE_SALE", 30L, new ConversionQuote("NO_GE_CONVERSION", 0L,
+					null, null, 1, java.util.Collections.emptyList()))), click, expected);
+		String json = codec.encode(event);
+		SavedLootEvent restored = codec.decode(json);
+		assertEquals(Long.valueOf(489466), restored.getExpectedSnapshot().getExpectedGp());
+		assertEquals(Long.valueOf(123456789), restored.getExpectedSnapshot().getInputPrices().get(33636));
+		assertEquals(null, codec.decode(json.replace("\"schemaVersion\":7", "\"schemaVersion\":6"))
+			.getExpectedSnapshot());
 	}
 
 	@Test(expected = IllegalArgumentException.class)
 	public void rejectsUnknownSchema()
 	{
-		codec.decode("{\"schemaVersion\":7}");
+		codec.decode("{\"schemaVersion\":8}");
 	}
 
 	@Test

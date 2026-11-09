@@ -4,7 +4,9 @@ import com.lootluck.model.LootEventPreview;
 import com.lootluck.model.LootItemPreview;
 import com.lootluck.model.LootValuation;
 import com.lootluck.model.ConversionQuote;
+import com.lootluck.model.ExpectedValueSnapshot;
 import com.lootluck.model.RewardClickCandidate;
+import com.lootluck.model.RewardStatistics;
 import java.awt.BorderLayout;
 import java.awt.Font;
 import java.time.ZoneId;
@@ -22,6 +24,7 @@ public final class LootLuckPanel extends PluginPanel
 	private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z");
 	private final JTextArea eventText = new JTextArea();
 	private final JTextArea rewardText = new JTextArea();
+	private final JTextArea statisticsText = new JTextArea();
 	private final JTextArea storageText = new JTextArea();
 
 	public LootLuckPanel()
@@ -40,6 +43,11 @@ public final class LootLuckPanel extends PluginPanel
 		rewardText.setWrapStyleWord(true);
 		rewardText.setText("Reward option click: waiting");
 		statusPanel.add(rewardText, BorderLayout.NORTH);
+		statisticsText.setEditable(false);
+		statisticsText.setLineWrap(true);
+		statisticsText.setWrapStyleWord(true);
+		statisticsText.setText("Loading reward summary...");
+		statusPanel.add(statisticsText, BorderLayout.CENTER);
 		storageText.setEditable(false);
 		storageText.setLineWrap(true);
 		storageText.setWrapStyleWord(true);
@@ -53,6 +61,7 @@ public final class LootLuckPanel extends PluginPanel
 		SwingUtilities.invokeLater(() -> {
 			eventText.setText("Waiting for a Maggot King loot event on this profile.");
 			rewardText.setText("Reward option click: waiting");
+			statisticsText.setText("Loading reward summary...");
 		});
 	}
 
@@ -85,7 +94,33 @@ public final class LootLuckPanel extends PluginPanel
 			"\nSaved events: " + (count < 0 ? "—" : count) + "\n" + status));
 	}
 
-	public void showObservation(LootEventPreview observation, boolean showItemIds)
+	public void showStatistics(RewardStatistics stats)
+	{
+		SwingUtilities.invokeLater(() -> {
+			StringBuilder text = new StringBuilder();
+			text.append("\nTiming-linked Open-stomach rewards: ").append(stats.getObservedNormalRewards());
+			text.append("\nValued normal rewards: ").append(stats.getValuedNormalRewards());
+			text.append("\nObserved Take-eggs loot: ").append(stats.getObservedEggRewards());
+			if (stats.getNetLuckGp() != null)
+			{
+				text.append("\nConverted loot: ").append(gp(stats.getConvertedGp()));
+				text.append("\nExpected: ").append(gp(stats.getExpectedGp()));
+				text.append("\nProvisional GP vs expected: ").append(signedGp(stats.getNetLuckGp()));
+				text.append("\nLatest normal reward: ").append(stats.getLastRewardDeltaGp() == null
+					? "Unavailable" : signedGp(stats.getLastRewardDeltaGp()));
+			}
+			text.append("\nLoot linked by click timing; not total kill count.\n");
+			statisticsText.setText(text.toString());
+		});
+	}
+
+	public void showStatisticsUnavailable()
+	{
+		SwingUtilities.invokeLater(() -> statisticsText.setText("Reward summary unavailable; check RuneLite log."));
+	}
+
+	public void showObservation(LootEventPreview observation, boolean showItemIds,
+		ExpectedValueSnapshot expected)
 	{
 		SwingUtilities.invokeLater(() -> {
 			StringBuilder text = new StringBuilder();
@@ -98,6 +133,15 @@ public final class LootLuckPanel extends PluginPanel
 			Long convertedGp = LootValuation.totalConvertedGpIfComplete(observation.getItems());
 			text.append("Direct GE sale estimate: ").append(actualGp == null ? "Unavailable (missing price)" : gp(actualGp)).append('\n');
 			text.append("After-conversion GE estimate: ").append(convertedGp == null ? "Unavailable" : gp(convertedGp)).append("\n\n");
+			if (expected != null)
+			{
+				text.append("Expected Open-stomach GP: ").append(expected.getExpectedGp() == null
+					? "Unavailable (missing table price)" : gp(expected.getExpectedGp())).append('\n');
+				text.append("Expected source: Wiki drop table + ")
+					.append("RUNELITE_WIKI_ADJUSTED".equals(expected.getPriceSource())
+						? "RuneLite Wiki prices" : "RuneLite Jagex prices")
+					.append("\n\n");
+			}
 			boolean hasUntradeable = false;
 			for (LootItemPreview item : observation.getItems())
 			{
@@ -132,7 +176,7 @@ public final class LootLuckPanel extends PluginPanel
 			{
 				text.append("\nUntradeable items count as 0 direct GE GP. HA and conversion estimates are shown separately.\n");
 			}
-			text.append("\nConversion estimate uses captured output prices and assumes required skills and inputs. Costs and GE fees excluded. Expected boss GP, luck, and kill count are not calculated yet.");
+			text.append("\nConversion estimate uses captured output prices and assumes required skills and inputs. Costs and GE fees excluded. GP differences count observed rewards; total kill count is not inferred.");
 			eventText.setText(text.toString());
 			eventText.setCaretPosition(0);
 		});
@@ -141,6 +185,11 @@ public final class LootLuckPanel extends PluginPanel
 	private static String gp(long amount)
 	{
 		return String.format(Locale.US, "%,d GP", amount);
+	}
+
+	private static String signedGp(long amount)
+	{
+		return (amount > 0 ? "+" : "") + gp(amount);
 	}
 
 	private static String conversionLabel(ConversionQuote quote)

@@ -20,6 +20,7 @@ public final class SavedLootEvent
 	private final int clientTick;
 	private final List<LootItemPreview> items;
 	private final RewardClickCandidate rewardClick;
+	private final ExpectedValueSnapshot expectedSnapshot;
 
 	public SavedLootEvent(String eventId, String profileId, String sessionId, Instant observedAtUtc,
 		String source, String eventType, int combatLevel, int reportedAmount, int clientTick,
@@ -32,6 +33,15 @@ public final class SavedLootEvent
 	public SavedLootEvent(String eventId, String profileId, String sessionId, Instant observedAtUtc,
 		String source, String eventType, int combatLevel, int reportedAmount, int clientTick,
 		List<LootItemPreview> items, RewardClickCandidate rewardClick)
+	{
+		this(eventId, profileId, sessionId, observedAtUtc, source, eventType, combatLevel,
+			reportedAmount, clientTick, items, rewardClick, null);
+	}
+
+	public SavedLootEvent(String eventId, String profileId, String sessionId, Instant observedAtUtc,
+		String source, String eventType, int combatLevel, int reportedAmount, int clientTick,
+		List<LootItemPreview> items, RewardClickCandidate rewardClick,
+		ExpectedValueSnapshot expectedSnapshot)
 	{
 		this.eventId = Objects.requireNonNull(eventId);
 		this.profileId = Objects.requireNonNull(profileId);
@@ -48,6 +58,11 @@ public final class SavedLootEvent
 			throw new IllegalArgumentException("Reward click is not a recent click on this profile");
 		}
 		this.rewardClick = rewardClick;
+		if (expectedSnapshot != null && (rewardClick == null || !"OPEN_STOMACH".equals(rewardClick.getMethod())))
+		{
+			throw new IllegalArgumentException("Normal expected value requires an Open-stomach click");
+		}
+		this.expectedSnapshot = expectedSnapshot;
 	}
 
 	public String getEventId() { return eventId; }
@@ -61,6 +76,7 @@ public final class SavedLootEvent
 	public int getClientTick() { return clientTick; }
 	public List<LootItemPreview> getItems() { return items; }
 	public RewardClickCandidate getRewardClick() { return rewardClick; }
+	public ExpectedValueSnapshot getExpectedSnapshot() { return expectedSnapshot; }
 	public Long getActualGp() { return LootValuation.totalGpIfComplete(items); }
 	public Long getConvertedGp() { return LootValuation.totalConvertedGpIfComplete(items); }
 }

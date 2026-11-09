@@ -8,18 +8,21 @@ import com.google.gson.JsonObject;
 import com.lootluck.model.LootItemPreview;
 import com.lootluck.model.ConversionComponent;
 import com.lootluck.model.ConversionQuote;
+import com.lootluck.model.ExpectedValueSnapshot;
 import com.lootluck.model.MaggotKingConversionCatalog;
 import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.SavedLootEvent;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.UUID;
 
 /** Explicit versioned JSON avoids serializing RuneLite or JDK internals. */
 public final class LootEventCodec
 {
-	public static final int SCHEMA_VERSION = 6;
+	public static final int SCHEMA_VERSION = 7;
 	private final Gson gson;
 
 	public LootEventCodec(Gson gson)
@@ -57,8 +60,28 @@ public final class LootEventCodec
 		root.add("convertedGp", convertedGp == null ? JsonNull.INSTANCE : gson.toJsonTree(convertedGp));
 		root.addProperty("conversionValuationStatus", convertedGp == null ? "INCOMPLETE" : "COMPLETE");
 		root.addProperty("conversionCatalogVersion", MaggotKingConversionCatalog.VERSION);
-		root.add("expectedGp", JsonNull.INSTANCE);
-		root.addProperty("expectedSource", "NOT_APPLIED");
+		ExpectedValueSnapshot expected = event.getExpectedSnapshot();
+		root.add("expectedGp", expected == null || expected.getExpectedGp() == null
+			? JsonNull.INSTANCE : gson.toJsonTree(expected.getExpectedGp()));
+		root.addProperty("expectedSource", expected == null ? "NOT_APPLIED" : expected.getSourceVersion());
+		root.add("expectedSourceUrl", expected == null ? JsonNull.INSTANCE : gson.toJsonTree(expected.getSourceUrl()));
+		root.add("expectedConversionCatalogVersion", expected == null ? JsonNull.INSTANCE
+			: gson.toJsonTree(expected.getConversionCatalogVersion()));
+		root.add("expectedPriceSource", expected == null ? JsonNull.INSTANCE : gson.toJsonTree(expected.getPriceSource()));
+		root.add("expectedCapturedAtUtc", expected == null ? JsonNull.INSTANCE
+			: gson.toJsonTree(expected.getCapturedAtUtc().toString()));
+		JsonArray expectedPrices = new JsonArray();
+		if (expected != null)
+		{
+			for (Map.Entry<Integer, Long> entry : expected.getInputPrices().entrySet())
+			{
+				JsonObject price = new JsonObject();
+				price.addProperty("itemId", entry.getKey());
+				price.addProperty("unitPriceGp", entry.getValue());
+				expectedPrices.add(price);
+			}
+		}
+		root.add("expectedInputPrices", expectedPrices);
 		JsonArray items = new JsonArray();
 		for (LootItemPreview item : event.getItems())
 		{
@@ -125,11 +148,31 @@ public final class LootEventCodec
 				throw new IllegalArgumentException("Unsupported attribution status");
 			}
 		}
+		ExpectedValueSnapshot expected = null;
+		if (version >= 7 && !"NOT_APPLIED".equals(requiredString(root, "expectedSource")))
+		{
+			Map<Integer, Long> inputPrices = new LinkedHashMap<>();
+			JsonArray expectedPrices = root.getAsJsonArray("expectedInputPrices");
+			if (expectedPrices == null)
+			{
+				throw new IllegalArgumentException("Missing expected price inputs");
+			}
+			for (JsonElement priceElement : expectedPrices)
+			{
+				JsonObject price = priceElement.getAsJsonObject();
+				inputPrices.put(requiredInt(price, "itemId"), requiredLong(price, "unitPriceGp"));
+			}
+			expected = new ExpectedValueSnapshot(optionalLong(root, "expectedGp"),
+				requiredString(root, "expectedSource"), requiredString(root, "expectedSourceUrl"),
+				requiredString(root, "expectedConversionCatalogVersion"),
+				requiredString(root, "expectedPriceSource"),
+				Instant.parse(requiredString(root, "expectedCapturedAtUtc")), inputPrices);
+		}
 		SavedLootEvent event = new SavedLootEvent(eventId, profileId,
 			requiredString(root, "sessionId"), Instant.parse(requiredString(root, "observedAtUtc")),
 			requiredString(root, "source"), requiredString(root, "eventType"),
 			requiredInt(root, "combatLevel"), requiredInt(root, "reportedAmount"),
-			requiredInt(root, "clientTick"), items, click);
+			requiredInt(root, "clientTick"), items, click, expected);
 		if (version >= 2 && !java.util.Objects.equals(event.getActualGp(), optionalLong(root, "actualGp")))
 		{
 			throw new IllegalArgumentException("Loot event total does not match item prices");
@@ -220,5 +263,15 @@ public final class LootEventCodec
 			throw new IllegalArgumentException("Missing " + key);
 		}
 		return value.getAsInt();
+	}
+
+	private static long requiredLong(JsonObject object, String key)
+	{
+		JsonElement value = object.get(key);
+		if (value == null || value.isJsonNull())
+		{
+			throw new IllegalArgumentException("Missing " + key);
+		}
+		return value.getAsLong();
 	}
 }

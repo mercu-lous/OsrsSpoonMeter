@@ -3,9 +3,12 @@ package com.lootluck;
 import com.google.inject.Provides;
 import com.google.gson.Gson;
 import com.lootluck.model.LootEventPreview;
+import com.lootluck.model.ExpectedValueSnapshot;
 import com.lootluck.model.LootItemPreview;
 import com.lootluck.model.MaggotKingConversionCatalog;
+import com.lootluck.model.MaggotKingExpectedValueService;
 import com.lootluck.model.RewardClickCandidate;
+import com.lootluck.model.RewardStatistics;
 import com.lootluck.model.SavedLootEvent;
 import com.lootluck.storage.LootEventCodec;
 import com.lootluck.storage.LootEventStore;
@@ -147,12 +150,13 @@ public class LootLuckPlugin extends Plugin
 			Instant.now(),
 			items
 		);
-		panel.showObservation(observation, config.showItemIds());
 		String profileKey = configManager.getRSProfileKey();
 		if (profileKey == null || profileKey.isEmpty())
 		{
 			currentProfileId = null;
+			panel.showObservation(observation, config.showItemIds(), null);
 			panel.showLootCorrelation(null, client.getTickCount());
+			panel.showStatistics(RewardStatistics.summarize(java.util.Collections.emptyList()));
 			panel.showStorage("No active profile", -1, "Event not saved: profile unavailable");
 			return;
 		}
@@ -162,11 +166,17 @@ public class LootLuckPlugin extends Plugin
 		int lootTick = client.getTickCount();
 		RewardClickCandidate click = recentRewardClick != null && recentRewardClick.matches(profileId, lootTick)
 			? recentRewardClick : null;
+		ExpectedValueSnapshot expected = click != null && "OPEN_STOMACH".equals(click.getMethod())
+			? MaggotKingExpectedValueService.capture(
+				id -> itemManager.getItemPriceWithSource(id, wikiPriceSetting),
+				wikiPriceSetting ? "RUNELITE_WIKI_ADJUSTED" : "RUNELITE_JAGEX",
+				observation.getObservedAtUtc()) : null;
+		panel.showObservation(observation, config.showItemIds(), expected);
 		panel.showLootCorrelation(click, lootTick);
 		SavedLootEvent savedEvent = new SavedLootEvent(
 			UUID.randomUUID().toString(), profileId, sessionId, observation.getObservedAtUtc(),
 			observation.getSource(), observation.getType(), event.getCombatLevel(), event.getAmount(),
-			lootTick, items, click);
+			lootTick, items, click, expected);
 		LootLuckPanel targetPanel = panel;
 		targetPanel.showStorage(shortProfileId(profileId), -1, "Saving event...");
 		submitStorageTask(() -> {
@@ -174,8 +184,17 @@ public class LootLuckPlugin extends Plugin
 			{
 				boolean inserted = getStorage().save(savedEvent);
 				long count = getStorage().count(profileId);
+				RewardStatistics statistics = readStatistics(profileId);
 				if (profileId.equals(currentProfileId))
 				{
+					if (statistics == null)
+					{
+						targetPanel.showStatisticsUnavailable();
+					}
+					else
+					{
+						targetPanel.showStatistics(statistics);
+					}
 					targetPanel.showStorage(shortProfileId(profileId), count,
 						inserted ? "Event saved" : "Event already saved");
 				}
@@ -232,6 +251,7 @@ public class LootLuckPlugin extends Plugin
 		if (profileKey == null || profileKey.isEmpty())
 		{
 			currentProfileId = null;
+			panel.showStatistics(RewardStatistics.summarize(java.util.Collections.emptyList()));
 			panel.showStorage("No active profile", -1, "Log in to load saved events");
 			return;
 		}
@@ -243,8 +263,17 @@ public class LootLuckPlugin extends Plugin
 			try
 			{
 				long count = getStorage().count(profileId);
+				RewardStatistics statistics = readStatistics(profileId);
 				if (profileId.equals(currentProfileId))
 				{
+					if (statistics == null)
+					{
+						targetPanel.showStatisticsUnavailable();
+					}
+					else
+					{
+						targetPanel.showStatistics(statistics);
+					}
 					targetPanel.showStorage(shortProfileId(profileId), count, "Ready");
 				}
 			}
@@ -278,6 +307,19 @@ public class LootLuckPlugin extends Plugin
 			storage = new LootEventStore(getPluginDirectory(), new LootEventCodec(gson));
 		}
 		return storage;
+	}
+
+	private RewardStatistics readStatistics(String profileId)
+	{
+		try
+		{
+			return getStorage().statistics(profileId);
+		}
+		catch (Exception exception)
+		{
+			log.warn("Could not read Maggot King reward summary", exception);
+			return null;
+		}
 	}
 
 	private static String shortProfileId(String profileId)
