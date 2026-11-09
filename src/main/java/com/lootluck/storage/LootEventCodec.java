@@ -16,7 +16,7 @@ import java.util.UUID;
 /** Explicit versioned JSON avoids serializing RuneLite or JDK internals. */
 public final class LootEventCodec
 {
-	public static final int SCHEMA_VERSION = 4;
+	public static final int SCHEMA_VERSION = 5;
 	private final Gson gson;
 
 	public LootEventCodec(Gson gson)
@@ -48,7 +48,7 @@ public final class LootEventCodec
 		root.addProperty("valuationCapturedAtUtc", event.getObservedAtUtc().toString());
 		root.add("priceFeedTimestampUtc", JsonNull.INSTANCE);
 		root.addProperty("valuationStatus", actualGp == null ? "INCOMPLETE" : "COMPLETE");
-		root.addProperty("valuationMethod", "RUNELITE_GE_UNTRADEABLE_ZERO_V1");
+		root.addProperty("valuationMethod", "RUNELITE_DIRECT_GE_UNTRADEABLE_ZERO_V1");
 		root.add("actualGp", actualGp == null ? JsonNull.INSTANCE : gson.toJsonTree(actualGp));
 		root.add("expectedGp", JsonNull.INSTANCE);
 		root.addProperty("expectedSource", "NOT_APPLIED");
@@ -61,6 +61,7 @@ public final class LootEventCodec
 			entry.addProperty("name", item.getName());
 			entry.add("unitPriceGp", item.getUnitPriceGp() == null ? JsonNull.INSTANCE : gson.toJsonTree(item.getUnitPriceGp()));
 			entry.addProperty("priceSource", item.getPriceSource());
+			entry.add("highAlchGp", item.getHighAlchGp() == null ? JsonNull.INSTANCE : gson.toJsonTree(item.getHighAlchGp()));
 			items.add(entry);
 		}
 		root.add("items", items);
@@ -95,11 +96,12 @@ public final class LootEventCodec
 			items.add(version == 1
 				? new LootItemPreview(itemId, quantity)
 				: new LootItemPreview(itemId, quantity, requiredString(item, "name"),
-					optionalLong(item, "unitPriceGp"), requiredString(item, "priceSource")));
+					optionalLong(item, "unitPriceGp"), requiredString(item, "priceSource"),
+					version >= 5 ? optionalLong(item, "highAlchGp") : null));
 		}
 		String profileId = requiredString(root, "profileId");
 		RewardClickCandidate click = null;
-		if (version == SCHEMA_VERSION)
+		if (version >= 4)
 		{
 			String attributionStatus = requiredString(root, "attributionStatus");
 			if ("CLICK_CORRELATED_UNCONFIRMED".equals(attributionStatus))

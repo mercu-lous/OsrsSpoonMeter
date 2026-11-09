@@ -7,6 +7,7 @@ public final class LootItemPreview
 	private final String name;
 	private final Long unitPriceGp;
 	private final String priceSource;
+	private final Long highAlchGp;
 
 	public LootItemPreview(int itemId, int quantity)
 	{
@@ -15,11 +16,18 @@ public final class LootItemPreview
 
 	public LootItemPreview(int itemId, int quantity, String name, Long unitPriceGp, String priceSource)
 	{
+		this(itemId, quantity, name, unitPriceGp, priceSource, null);
+	}
+
+	public LootItemPreview(int itemId, int quantity, String name, Long unitPriceGp,
+		String priceSource, Long highAlchGp)
+	{
 		this.itemId = itemId;
 		this.quantity = quantity;
 		this.name = name;
 		this.unitPriceGp = unitPriceGp;
 		this.priceSource = priceSource;
+		this.highAlchGp = highAlchGp;
 	}
 
 	public int getItemId()
@@ -45,5 +53,10 @@ public final class LootItemPreview
 	public String getPriceSource()
 	{
 		return priceSource;
+	}
+
+	public Long getHighAlchGp()
+	{
+		return highAlchGp;
 	}
 }

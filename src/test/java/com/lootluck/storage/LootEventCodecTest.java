@@ -41,10 +41,10 @@ public class LootEventCodecTest
 		assertEquals(event.getObservedAtUtc(), restored.getObservedAtUtc());
 		assertEquals("Maggot King", restored.getSource());
 		assertEquals("NPC", restored.getEventType());
-		assertTrue(json.contains("\"schemaVersion\":4"));
+		assertTrue(json.contains("\"schemaVersion\":5"));
 		assertTrue(json.contains("\"attributionStatus\":\"UNATTRIBUTED\""));
 		assertTrue(json.contains("\"valuationStatus\":\"COMPLETE\""));
-		assertTrue(json.contains("\"valuationMethod\":\"RUNELITE_GE_UNTRADEABLE_ZERO_V1\""));
+		assertTrue(json.contains("\"valuationMethod\":\"RUNELITE_DIRECT_GE_UNTRADEABLE_ZERO_V1\""));
 		assertTrue(json.contains("\"actualGp\":9000"));
 		assertTrue(json.contains("\"valuationCapturedAtUtc\":\"2026-11-09T04:54:25Z\""));
 		assertTrue(json.contains("\"priceFeedTimestampUtc\":null"));
@@ -93,6 +93,19 @@ public class LootEventCodecTest
 	}
 
 	@Test
+	public void keepsAlchemyReferenceSeparateFromDirectGeValue()
+	{
+		SavedLootEvent event = new SavedLootEvent("a798a7a2-7b4b-4d82-8e2b-d16a42db942b",
+			ProfileIds.fromRuneScapeProfileKey("account-one"), "session-1",
+			Instant.parse("2026-11-09T07:48:33Z"), "Maggot King", "NPC", 0, 1, 730,
+			Arrays.asList(new LootItemPreview(33679, 1, "Tarnished spear", 0L,
+				"UNTRADEABLE_NO_GE_SALE", 12000L)));
+		SavedLootEvent restored = codec.decode(codec.encode(event));
+		assertEquals(Long.valueOf(0), restored.getActualGp());
+		assertEquals(Long.valueOf(12000), restored.getItems().get(0).getHighAlchGp());
+	}
+
+	@Test
 	public void readsPriorSchemaTwoWithMissingPricesUnchanged()
 	{
 		String prior = "{\"schemaVersion\":2,\"eventId\":\"a798a7a2-7b4b-4d82-8e2b-d16a42db942b\","
@@ -126,12 +139,14 @@ public class LootEventCodecTest
 		assertTrue(json.contains("\"rewardMethod\":\"OPEN_STOMACH\""));
 		assertEquals(click.getClickId(), codec.decode(json).getRewardClick().getClickId());
 		assertEquals(339, codec.decode(json).getRewardClick().getClientTick());
+		assertEquals(click.getClickId(), codec.decode(json.replace("\"schemaVersion\":5", "\"schemaVersion\":4"))
+			.getRewardClick().getClickId());
 	}
 
 	@Test(expected = IllegalArgumentException.class)
 	public void rejectsUnknownSchema()
 	{
-		codec.decode("{\"schemaVersion\":5}");
+		codec.decode("{\"schemaVersion\":6}");
 	}
 
 	@Test

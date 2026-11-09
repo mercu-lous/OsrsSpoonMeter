@@ -94,7 +94,7 @@ public final class LootLuckPanel extends PluginPanel
 			text.append("Observed: ").append(TIME_FORMAT.withZone(ZoneId.systemDefault()).format(observation.getObservedAtUtc())).append('\n');
 			text.append("Item stacks: ").append(observation.getItems().size()).append('\n');
 			Long actualGp = LootValuation.totalGpIfComplete(observation.getItems());
-			text.append("GE loot value estimate: ").append(actualGp == null ? "Unavailable (missing price)" : gp(actualGp)).append("\n\n");
+			text.append("Direct GE sale estimate: ").append(actualGp == null ? "Unavailable (missing price)" : gp(actualGp)).append("\n\n");
 			boolean hasUntradeable = false;
 			for (LootItemPreview item : observation.getItems())
 			{
@@ -106,7 +106,11 @@ public final class LootLuckPanel extends PluginPanel
 				if ("UNTRADEABLE_NO_GE_SALE".equals(item.getPriceSource()))
 				{
 					hasUntradeable = true;
-					text.append(" @ 0 GP (untradeable)");
+					text.append(" @ 0 GP direct sale (untradeable)");
+					if (item.getHighAlchGp() != null)
+					{
+						text.append("; HA ").append(gp(item.getHighAlchGp()));
+					}
 				}
 				else
 				{
@@ -116,9 +120,9 @@ public final class LootLuckPanel extends PluginPanel
 			}
 			if (hasUntradeable)
 			{
-				text.append("\nUntradeable items count as 0 GE GP; use and alch value excluded.\n");
+				text.append("\nUntradeable items count as 0 direct GE GP. HA is shown separately; conversion value excluded.\n");
 			}
-			text.append("\nGross GE item estimate only. Expected GP, luck, and kill count are not calculated yet.");
+			text.append("\nDirect sale estimate only. Expected GP, luck, and kill count are not calculated yet.");
 			eventText.setText(text.toString());
 			eventText.setCaretPosition(0);
 		});

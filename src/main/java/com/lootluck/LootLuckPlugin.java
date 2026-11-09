@@ -127,11 +127,13 @@ public class LootLuckPlugin extends Plugin
 			ItemComposition composition = itemManager.getItemComposition(item.getId());
 			String name = composition == null ? null : composition.getName();
 			boolean untradeable = composition != null && !composition.isTradeable();
+			int highAlchGp = composition == null ? 0 : composition.getHaPrice();
 			items.add(new LootItemPreview(item.getId(), item.getQuantity(),
 				name == null || name.isEmpty() ? "Item #" + item.getId() : name,
 				price > 0 ? price : untradeable ? 0L : null,
 				price > 0 ? (wikiPriceSetting ? "RUNELITE_WIKI_ADJUSTED" : "RUNELITE_JAGEX")
-					: untradeable ? "UNTRADEABLE_NO_GE_SALE" : "UNAVAILABLE"));
+					: untradeable ? "UNTRADEABLE_NO_GE_SALE" : "UNAVAILABLE",
+				highAlchGp > 0 ? (long) highAlchGp : null));
 		}
 		LootEventPreview observation = new LootEventPreview(
 			event.getName(),
