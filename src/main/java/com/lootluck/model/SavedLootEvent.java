@@ -62,4 +62,5 @@ public final class SavedLootEvent
 	public List<LootItemPreview> getItems() { return items; }
 	public RewardClickCandidate getRewardClick() { return rewardClick; }
 	public Long getActualGp() { return LootValuation.totalGpIfComplete(items); }
+	public Long getConvertedGp() { return LootValuation.totalConvertedGpIfComplete(items); }
 }

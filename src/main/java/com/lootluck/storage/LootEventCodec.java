@@ -6,6 +6,9 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.lootluck.model.LootItemPreview;
+import com.lootluck.model.ConversionComponent;
+import com.lootluck.model.ConversionQuote;
+import com.lootluck.model.MaggotKingConversionCatalog;
 import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.SavedLootEvent;
 import java.time.Instant;
@@ -16,7 +19,7 @@ import java.util.UUID;
 /** Explicit versioned JSON avoids serializing RuneLite or JDK internals. */
 public final class LootEventCodec
 {
-	public static final int SCHEMA_VERSION = 5;
+	public static final int SCHEMA_VERSION = 6;
 	private final Gson gson;
 
 	public LootEventCodec(Gson gson)
@@ -50,6 +53,10 @@ public final class LootEventCodec
 		root.addProperty("valuationStatus", actualGp == null ? "INCOMPLETE" : "COMPLETE");
 		root.addProperty("valuationMethod", "RUNELITE_DIRECT_GE_UNTRADEABLE_ZERO_V1");
 		root.add("actualGp", actualGp == null ? JsonNull.INSTANCE : gson.toJsonTree(actualGp));
+		Long convertedGp = event.getConvertedGp();
+		root.add("convertedGp", convertedGp == null ? JsonNull.INSTANCE : gson.toJsonTree(convertedGp));
+		root.addProperty("conversionValuationStatus", convertedGp == null ? "INCOMPLETE" : "COMPLETE");
+		root.addProperty("conversionCatalogVersion", MaggotKingConversionCatalog.VERSION);
 		root.add("expectedGp", JsonNull.INSTANCE);
 		root.addProperty("expectedSource", "NOT_APPLIED");
 		JsonArray items = new JsonArray();
@@ -62,6 +69,7 @@ public final class LootEventCodec
 			entry.add("unitPriceGp", item.getUnitPriceGp() == null ? JsonNull.INSTANCE : gson.toJsonTree(item.getUnitPriceGp()));
 			entry.addProperty("priceSource", item.getPriceSource());
 			entry.add("highAlchGp", item.getHighAlchGp() == null ? JsonNull.INSTANCE : gson.toJsonTree(item.getHighAlchGp()));
+			entry.add("conversion", encodeConversion(item.getConversionQuote()));
 			items.add(entry);
 		}
 		root.add("items", items);
@@ -97,7 +105,8 @@ public final class LootEventCodec
 				? new LootItemPreview(itemId, quantity)
 				: new LootItemPreview(itemId, quantity, requiredString(item, "name"),
 					optionalLong(item, "unitPriceGp"), requiredString(item, "priceSource"),
-					version >= 5 ? optionalLong(item, "highAlchGp") : null));
+					version >= 5 ? optionalLong(item, "highAlchGp") : null,
+					version >= 6 ? decodeConversion(item.get("conversion")) : null));
 		}
 		String profileId = requiredString(root, "profileId");
 		RewardClickCandidate click = null;
@@ -125,7 +134,66 @@ public final class LootEventCodec
 		{
 			throw new IllegalArgumentException("Loot event total does not match item prices");
 		}
+		if (version >= 6 && !java.util.Objects.equals(event.getConvertedGp(), optionalLong(root, "convertedGp")))
+		{
+			throw new IllegalArgumentException("Converted loot total does not match item estimates");
+		}
 		return event;
+	}
+
+	private JsonElement encodeConversion(ConversionQuote quote)
+	{
+		if (quote == null)
+		{
+			return JsonNull.INSTANCE;
+		}
+		JsonObject result = new JsonObject();
+		result.addProperty("method", quote.getMethod());
+		result.add("stackGp", quote.getStackGp() == null ? JsonNull.INSTANCE : gson.toJsonTree(quote.getStackGp()));
+		result.add("recipeSourceUrl", quote.getRecipeSourceUrl() == null ? JsonNull.INSTANCE : gson.toJsonTree(quote.getRecipeSourceUrl()));
+		result.add("priceSource", quote.getPriceSource() == null ? JsonNull.INSTANCE : gson.toJsonTree(quote.getPriceSource()));
+		result.addProperty("denominator", quote.getDenominator());
+		JsonArray components = new JsonArray();
+		for (ConversionComponent component : quote.getComponents())
+		{
+			JsonObject entry = new JsonObject();
+			entry.addProperty("outputItemId", component.getOutputItemId());
+			entry.addProperty("weight", component.getWeight());
+			entry.add("unitPriceGp", component.getUnitPriceGp() == null ? JsonNull.INSTANCE : gson.toJsonTree(component.getUnitPriceGp()));
+			components.add(entry);
+		}
+		result.add("components", components);
+		return result;
+	}
+
+	private static ConversionQuote decodeConversion(JsonElement element)
+	{
+		if (element == null || element.isJsonNull())
+		{
+			return null;
+		}
+		JsonObject object = element.getAsJsonObject();
+		List<ConversionComponent> components = new ArrayList<>();
+		JsonArray array = object.getAsJsonArray("components");
+		if (array == null)
+		{
+			throw new IllegalArgumentException("Missing conversion components");
+		}
+		for (JsonElement componentElement : array)
+		{
+			JsonObject component = componentElement.getAsJsonObject();
+			components.add(new ConversionComponent(requiredInt(component, "outputItemId"),
+				requiredInt(component, "weight"), optionalLong(component, "unitPriceGp")));
+		}
+		return new ConversionQuote(requiredString(object, "method"), optionalLong(object, "stackGp"),
+			optionalString(object, "recipeSourceUrl"), optionalString(object, "priceSource"),
+			requiredInt(object, "denominator"), components);
+	}
+
+	private static String optionalString(JsonObject object, String key)
+	{
+		JsonElement value = object.get(key);
+		return value == null || value.isJsonNull() ? null : value.getAsString();
 	}
 
 	private static Long optionalLong(JsonObject object, String key)

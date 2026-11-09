@@ -4,6 +4,7 @@ import com.google.inject.Provides;
 import com.google.gson.Gson;
 import com.lootluck.model.LootEventPreview;
 import com.lootluck.model.LootItemPreview;
+import com.lootluck.model.MaggotKingConversionCatalog;
 import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.SavedLootEvent;
 import com.lootluck.storage.LootEventCodec;
@@ -125,15 +126,20 @@ public class LootLuckPlugin extends Plugin
 		{
 			long price = itemManager.getItemPriceWithSource(item.getId(), wikiPriceSetting);
 			ItemComposition composition = itemManager.getItemComposition(item.getId());
+			ItemComposition canonicalComposition = itemManager.getItemComposition(itemManager.canonicalize(item.getId()));
 			String name = composition == null ? null : composition.getName();
-			boolean untradeable = composition != null && !composition.isTradeable();
+			boolean untradeable = canonicalComposition != null && !canonicalComposition.isTradeable();
+			boolean directSale = price > 0 && (canonicalComposition == null || canonicalComposition.isGeTradeable());
 			int highAlchGp = composition == null ? 0 : composition.getHaPrice();
+			String priceSource = wikiPriceSetting ? "RUNELITE_WIKI_ADJUSTED" : "RUNELITE_JAGEX";
 			items.add(new LootItemPreview(item.getId(), item.getQuantity(),
 				name == null || name.isEmpty() ? "Item #" + item.getId() : name,
-				price > 0 ? price : untradeable ? 0L : null,
-				price > 0 ? (wikiPriceSetting ? "RUNELITE_WIKI_ADJUSTED" : "RUNELITE_JAGEX")
-					: untradeable ? "UNTRADEABLE_NO_GE_SALE" : "UNAVAILABLE",
-				highAlchGp > 0 ? (long) highAlchGp : null));
+				directSale ? price : untradeable ? 0L : null,
+				directSale ? priceSource : untradeable ? "UNTRADEABLE_NO_GE_SALE" : "UNAVAILABLE",
+				highAlchGp > 0 ? (long) highAlchGp : null,
+				MaggotKingConversionCatalog.quote(item.getId(), item.getQuantity(), directSale ? price : 0,
+					canonicalComposition != null && canonicalComposition.isTradeable(),
+					outputId -> itemManager.getItemPriceWithSource(outputId, wikiPriceSetting), priceSource)));
 		}
 		LootEventPreview observation = new LootEventPreview(
 			event.getName(),

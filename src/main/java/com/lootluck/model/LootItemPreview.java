@@ -8,6 +8,7 @@ public final class LootItemPreview
 	private final Long unitPriceGp;
 	private final String priceSource;
 	private final Long highAlchGp;
+	private final ConversionQuote conversionQuote;
 
 	public LootItemPreview(int itemId, int quantity)
 	{
@@ -22,12 +23,19 @@ public final class LootItemPreview
 	public LootItemPreview(int itemId, int quantity, String name, Long unitPriceGp,
 		String priceSource, Long highAlchGp)
 	{
+		this(itemId, quantity, name, unitPriceGp, priceSource, highAlchGp, null);
+	}
+
+	public LootItemPreview(int itemId, int quantity, String name, Long unitPriceGp,
+		String priceSource, Long highAlchGp, ConversionQuote conversionQuote)
+	{
 		this.itemId = itemId;
 		this.quantity = quantity;
 		this.name = name;
 		this.unitPriceGp = unitPriceGp;
 		this.priceSource = priceSource;
 		this.highAlchGp = highAlchGp;
+		this.conversionQuote = conversionQuote;
 	}
 
 	public int getItemId()
@@ -58,5 +66,10 @@ public final class LootItemPreview
 	public Long getHighAlchGp()
 	{
 		return highAlchGp;
+	}
+
+	public ConversionQuote getConversionQuote()
+	{
+		return conversionQuote;
 	}
 }

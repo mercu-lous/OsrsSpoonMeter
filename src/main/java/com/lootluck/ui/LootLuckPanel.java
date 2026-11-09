@@ -3,6 +3,7 @@ package com.lootluck.ui;
 import com.lootluck.model.LootEventPreview;
 import com.lootluck.model.LootItemPreview;
 import com.lootluck.model.LootValuation;
+import com.lootluck.model.ConversionQuote;
 import com.lootluck.model.RewardClickCandidate;
 import java.awt.BorderLayout;
 import java.awt.Font;
@@ -94,7 +95,9 @@ public final class LootLuckPanel extends PluginPanel
 			text.append("Observed: ").append(TIME_FORMAT.withZone(ZoneId.systemDefault()).format(observation.getObservedAtUtc())).append('\n');
 			text.append("Item stacks: ").append(observation.getItems().size()).append('\n');
 			Long actualGp = LootValuation.totalGpIfComplete(observation.getItems());
-			text.append("Direct GE sale estimate: ").append(actualGp == null ? "Unavailable (missing price)" : gp(actualGp)).append("\n\n");
+			Long convertedGp = LootValuation.totalConvertedGpIfComplete(observation.getItems());
+			text.append("Direct GE sale estimate: ").append(actualGp == null ? "Unavailable (missing price)" : gp(actualGp)).append('\n');
+			text.append("After-conversion GE estimate: ").append(convertedGp == null ? "Unavailable" : gp(convertedGp)).append("\n\n");
 			boolean hasUntradeable = false;
 			for (LootItemPreview item : observation.getItems())
 			{
@@ -117,12 +120,19 @@ public final class LootLuckPanel extends PluginPanel
 					text.append(" @ ").append(item.getUnitPriceGp() == null ? "price unavailable" : gp(item.getUnitPriceGp()) + " each");
 				}
 				text.append('\n');
+				ConversionQuote quote = item.getConversionQuote();
+				if (quote != null && !"DIRECT_GE".equals(quote.getMethod())
+					&& !"NO_GE_CONVERSION".equals(quote.getMethod())
+					&& !"MISSING_DIRECT_PRICE".equals(quote.getMethod()))
+				{
+					text.append("  ").append(conversionLabel(quote)).append('\n');
+				}
 			}
 			if (hasUntradeable)
 			{
-				text.append("\nUntradeable items count as 0 direct GE GP. HA is shown separately; conversion value excluded.\n");
+				text.append("\nUntradeable items count as 0 direct GE GP. HA and conversion estimates are shown separately.\n");
 			}
-			text.append("\nDirect sale estimate only. Expected GP, luck, and kill count are not calculated yet.");
+			text.append("\nConversion estimate uses captured output prices and assumes required skills and inputs. Costs and GE fees excluded. Expected boss GP, luck, and kill count are not calculated yet.");
 			eventText.setText(text.toString());
 			eventText.setCaretPosition(0);
 		});
@@ -131,5 +141,37 @@ public final class LootLuckPanel extends PluginPanel
 	private static String gp(long amount)
 	{
 		return String.format(Locale.US, "%,d GP", amount);
+	}
+
+	private static String conversionLabel(ConversionQuote quote)
+	{
+		Long value = quote.getStackGp();
+		if (value == null)
+		{
+			switch (quote.getMethod())
+			{
+				case "POLISH_EXPECTED":
+					return "Polish value unavailable: missing output price";
+				case "ETCH_TO_TRADEABLE":
+					return "Etched fang price unavailable";
+				case "SQUEEZE_50_SACS_TO_VIAL":
+					return "Vial of blood price unavailable";
+				case "UNSUPPORTED_UNTRADEABLE":
+					return "No GP conversion estimate for this item yet";
+				default:
+					return "Conversion value unavailable";
+			}
+		}
+		switch (quote.getMethod())
+		{
+			case "POLISH_EXPECTED":
+				return "Expected after polish (64 Crafting): " + gp(value);
+			case "ETCH_TO_TRADEABLE":
+				return "After etching (84 Crafting): " + gp(value);
+			case "SQUEEZE_50_SACS_TO_VIAL":
+				return "After squeezing (50 sacs/vial): " + gp(value);
+			default:
+				return "After conversion: " + gp(value);
+		}
 	}
 }

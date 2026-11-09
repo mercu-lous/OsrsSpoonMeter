@@ -30,4 +30,26 @@ public final class LootValuation
 			return null;
 		}
 	}
+
+	public static Long totalConvertedGpIfComplete(List<LootItemPreview> items)
+	{
+		long total = 0;
+		try
+		{
+			for (LootItemPreview item : items)
+			{
+				ConversionQuote quote = item.getConversionQuote();
+				if (quote == null || quote.getStackGp() == null)
+				{
+					return null;
+				}
+				total = Math.addExact(total, quote.getStackGp());
+			}
+			return total;
+		}
+		catch (ArithmeticException overflow)
+		{
+			return null;
+		}
+	}
 }
