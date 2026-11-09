@@ -16,4 +16,14 @@ public interface LootLuckConfig extends Config
 	{
 		return true;
 	}
+
+	@ConfigItem(
+		keyName = "calendarTimeZone",
+		name = "Calendar time zone",
+		description = "IANA time zone ID such as America/Chicago; blank or invalid uses your computer's time zone"
+	)
+	default String calendarTimeZone()
+	{
+		return "";
+	}
 }

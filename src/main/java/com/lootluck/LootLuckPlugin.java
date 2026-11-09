@@ -17,7 +17,10 @@ import com.lootluck.ui.LootLuckPanel;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
+import java.time.DateTimeException;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -28,11 +31,13 @@ import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.ItemComposition;
+import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.config.RuneLiteConfig;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.RuneScapeProfileChanged;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.game.ItemStack;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.plugins.Plugin;
@@ -81,6 +86,8 @@ public class LootLuckPlugin extends Plugin
 	private String sessionId;
 	private volatile String currentProfileId;
 	private RewardClickCandidate recentRewardClick; // RuneLite client thread only.
+	private ZoneId calendarZone; // RuneLite client thread only.
+	private LocalDate calendarDate; // RuneLite client thread only.
 
 	@Override
 	protected void startUp()
@@ -156,7 +163,8 @@ public class LootLuckPlugin extends Plugin
 			currentProfileId = null;
 			panel.showObservation(observation, config.showItemIds(), null);
 			panel.showLootCorrelation(null, client.getTickCount());
-			panel.showStatistics(RewardSummary.fromEvents(java.util.Collections.emptyList(), sessionId));
+			panel.showStatistics(RewardSummary.fromEvents(java.util.Collections.emptyList(), sessionId,
+				Instant.now(), resolveCalendarZone()));
 			panel.showStorage("No active profile", -1, "Event not saved: profile unavailable");
 			return;
 		}
@@ -177,6 +185,7 @@ public class LootLuckPlugin extends Plugin
 			UUID.randomUUID().toString(), profileId, sessionId, observation.getObservedAtUtc(),
 			observation.getSource(), observation.getType(), event.getCombatLevel(), event.getAmount(),
 			lootTick, items, click, expected);
+		ZoneId summaryZone = resolveCalendarZone();
 		LootLuckPanel targetPanel = panel;
 		targetPanel.showStorage(shortProfileId(profileId), -1, "Saving event...");
 		submitStorageTask(() -> {
@@ -184,7 +193,7 @@ public class LootLuckPlugin extends Plugin
 			{
 				boolean inserted = getStorage().save(savedEvent);
 				long count = getStorage().count(profileId);
-				RewardSummary statistics = readStatistics(profileId);
+				RewardSummary statistics = readStatistics(profileId, summaryZone);
 				if (profileId.equals(currentProfileId))
 				{
 					if (statistics == null)
@@ -245,13 +254,37 @@ public class LootLuckPlugin extends Plugin
 		}
 	}
 
+	@Subscribe
+	public void onConfigChanged(ConfigChanged event)
+	{
+		if (panel != null && "loot-luck-tracker".equals(event.getGroup())
+			&& "calendarTimeZone".equals(event.getKey()))
+		{
+			refreshProfileCount();
+		}
+	}
+
+	@Subscribe
+	public void onGameTick(GameTick event)
+	{
+		if (panel != null && currentProfileId != null && calendarZone != null
+			&& !LocalDate.now(calendarZone).equals(calendarDate))
+		{
+			refreshProfileCount();
+		}
+	}
+
 	private void refreshProfileCount()
 	{
+		ZoneId summaryZone = resolveCalendarZone();
+		calendarZone = summaryZone;
+		calendarDate = LocalDate.now(summaryZone);
 		String profileKey = configManager.getRSProfileKey();
 		if (profileKey == null || profileKey.isEmpty())
 		{
 			currentProfileId = null;
-			panel.showStatistics(RewardSummary.fromEvents(java.util.Collections.emptyList(), sessionId));
+			panel.showStatistics(RewardSummary.fromEvents(java.util.Collections.emptyList(), sessionId,
+				Instant.now(), summaryZone));
 			panel.showStorage("No active profile", -1, "Log in to load saved events");
 			return;
 		}
@@ -263,7 +296,7 @@ public class LootLuckPlugin extends Plugin
 			try
 			{
 				long count = getStorage().count(profileId);
-				RewardSummary statistics = readStatistics(profileId);
+				RewardSummary statistics = readStatistics(profileId, summaryZone);
 				if (profileId.equals(currentProfileId))
 				{
 					if (statistics == null)
@@ -309,16 +342,33 @@ public class LootLuckPlugin extends Plugin
 		return storage;
 	}
 
-	private RewardSummary readStatistics(String profileId)
+	private RewardSummary readStatistics(String profileId, ZoneId summaryZone)
 	{
 		try
 		{
-			return getStorage().statistics(profileId, sessionId);
+			return getStorage().statistics(profileId, sessionId, summaryZone);
 		}
 		catch (Exception exception)
 		{
 			log.warn("Could not read Maggot King reward summary", exception);
 			return null;
+		}
+	}
+
+	private ZoneId resolveCalendarZone()
+	{
+		String configured = config.calendarTimeZone();
+		if (configured == null || configured.trim().isEmpty())
+		{
+			return ZoneId.systemDefault();
+		}
+		try
+		{
+			return ZoneId.of(configured.trim());
+		}
+		catch (DateTimeException invalid)
+		{
+			return ZoneId.systemDefault();
 		}
 	}
 

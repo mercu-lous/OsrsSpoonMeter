@@ -2,8 +2,11 @@ package com.lootluck.model;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.UUID;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
@@ -48,13 +51,65 @@ public class RewardStatisticsTest
 	{
 		SavedLootEvent previous = event(1, 1, "OPEN_STOMACH", 100, 102, 450, 500, 1000L, "previous-run");
 		SavedLootEvent current = event(2, 2, "OPEN_STOMACH", 200, 202, 451, 1500, 1000L, "current-run");
-		RewardSummary summary = RewardSummary.fromEvents(Arrays.asList(previous, current), "current-run");
-		assertEquals(2, summary.getAllTime().getObservedNormalRewards());
-		assertEquals(2, summary.getAllTime().getValuedNormalRewards());
-		assertEquals(Long.valueOf(0), summary.getAllTime().getNetLuckGp());
-		assertEquals(1, summary.getCurrentRun().getObservedNormalRewards());
-		assertEquals(1, summary.getCurrentRun().getValuedNormalRewards());
-		assertEquals(Long.valueOf(500), summary.getCurrentRun().getNetLuckGp());
+		RewardSummary summary = RewardSummary.fromEvents(Arrays.asList(previous, current),
+			"current-run", Instant.ofEpochSecond(300), ZoneOffset.UTC);
+		assertEquals(2, summary.get(RewardScope.ALL_TIME).getObservedNormalRewards());
+		assertEquals(2, summary.get(RewardScope.ALL_TIME).getValuedNormalRewards());
+		assertEquals(Long.valueOf(0), summary.get(RewardScope.ALL_TIME).getNetLuckGp());
+		assertEquals(1, summary.get(RewardScope.CURRENT_RUN).getObservedNormalRewards());
+		assertEquals(1, summary.get(RewardScope.CURRENT_RUN).getValuedNormalRewards());
+		assertEquals(Long.valueOf(500), summary.get(RewardScope.CURRENT_RUN).getNetLuckGp());
+	}
+
+	@Test
+	public void calendarScopesUseLocalMidnightMondayAndSelectedZone()
+	{
+		Instant asOf = Instant.parse("2026-11-09T15:00:00Z"); // Monday 09:00 in Chicago.
+		List<SavedLootEvent> events = Arrays.asList(
+			eventAt(1, 1, Instant.parse("2025-12-31T18:00:00Z"), 100, 1000L),
+			eventAt(2, 2, Instant.parse("2026-10-31T18:00:00Z"), 100, 1000L),
+			eventAt(3, 3, Instant.parse("2026-11-09T05:59:59Z"), 100, 1000L),
+			eventAt(4, 4, Instant.parse("2026-11-09T06:00:00Z"), 100, 1000L),
+			eventAt(5, 5, Instant.parse("2026-11-09T20:00:00Z"), 100, 1000L));
+		RewardSummary chicago = RewardSummary.fromEvents(events, "session", asOf,
+			ZoneId.of("America/Chicago"));
+		assertEquals(5, chicago.get(RewardScope.ALL_TIME).getObservedNormalRewards());
+		assertEquals(1, chicago.get(RewardScope.TODAY).getObservedNormalRewards());
+		assertEquals(1, chicago.get(RewardScope.THIS_WEEK).getObservedNormalRewards());
+		assertEquals(2, chicago.get(RewardScope.THIS_MONTH).getObservedNormalRewards());
+		assertEquals(3, chicago.get(RewardScope.THIS_YEAR).getObservedNormalRewards());
+		RewardSummary utc = RewardSummary.fromEvents(events, "session", asOf, ZoneOffset.UTC);
+		assertEquals(2, utc.get(RewardScope.TODAY).getObservedNormalRewards());
+	}
+
+	@Test
+	public void calendarFilterKeepsCallbacksFromOneRewardTogetherAcrossMidnight()
+	{
+		Instant asOf = Instant.parse("2026-11-09T06:01:00Z");
+		SavedLootEvent beforeMidnight = eventAt(1, 1, Instant.parse("2026-11-09T05:59:59Z"), 100, 1000L);
+		SavedLootEvent afterMidnight = eventAt(2, 1, Instant.parse("2026-11-09T06:00:01Z"), 200, 1000L);
+		RewardStatistics today = RewardSummary.fromEvents(Arrays.asList(beforeMidnight, afterMidnight),
+			"session", asOf, ZoneId.of("America/Chicago")).get(RewardScope.TODAY);
+		assertEquals(1, today.getObservedNormalRewards());
+		assertEquals(300, today.getConvertedGp());
+		assertEquals(1000, today.getExpectedGp());
+	}
+
+	private static SavedLootEvent eventAt(int eventNumber, int clickNumber, Instant time,
+		long actualGp, Long expectedGp)
+	{
+		RewardClickCandidate click = new RewardClickCandidate(id("dated-click" + clickNumber), PROFILE,
+			"OPEN_STOMACH", 100, 42, time.minusSeconds(1));
+		ConversionQuote conversion = new ConversionQuote("DIRECT_GE", actualGp,
+			null, "RUNELITE_JAGEX", 1, Collections.emptyList());
+		LootItemPreview item = new LootItemPreview(450 + eventNumber, 1, "Test", actualGp,
+			"RUNELITE_JAGEX", null, conversion);
+		ExpectedValueSnapshot expected = new ExpectedValueSnapshot(expectedGp,
+			MaggotKingExpectedValueService.SOURCE_VERSION, MaggotKingExpectedValueService.SOURCE_URL,
+			MaggotKingConversionCatalog.VERSION, "RUNELITE_JAGEX", time, Collections.emptyMap());
+		return new SavedLootEvent(id("dated-event" + eventNumber), PROFILE, "session", time,
+			"Maggot King", "NPC", 0, 1, 102,
+			Collections.singletonList(item), click, expected);
 	}
 
 	private static SavedLootEvent event(int eventNumber, int clickNumber, String method,

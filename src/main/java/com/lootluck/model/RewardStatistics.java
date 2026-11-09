@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /** Counts observed reward clicks once, even when a click produces multiple loot callbacks. */
@@ -36,6 +37,13 @@ public final class RewardStatistics
 
 	public static RewardStatistics summarize(List<SavedLootEvent> events)
 	{
+		return summarize(events, event -> true);
+	}
+
+	/** Includes whole reward groups using the time and session of their final callback. */
+	public static RewardStatistics summarize(List<SavedLootEvent> events,
+		Predicate<SavedLootEvent> includeReward)
+	{
 		Map<String, List<SavedLootEvent>> groups = new LinkedHashMap<>();
 		for (SavedLootEvent event : events)
 		{
@@ -55,6 +63,10 @@ public final class RewardStatistics
 		for (List<SavedLootEvent> group : groups.values())
 		{
 			group.sort(Comparator.comparing(SavedLootEvent::getObservedAtUtc));
+			if (!includeReward.test(group.get(group.size() - 1)))
+			{
+				continue;
+			}
 			String method = group.get(0).getRewardClick().getMethod();
 			if ("TAKE_EGGS".equals(method))
 			{

@@ -7,6 +7,8 @@ import java.io.IOException;
 import java.nio.channels.FileChannel;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -67,12 +69,13 @@ public final class LootEventStore
 		}
 	}
 
-	public RewardSummary statistics(String profileId, String sessionId) throws IOException
+	public RewardSummary statistics(String profileId, String sessionId, ZoneId calendarZone) throws IOException
 	{
 		Filepath directory = eventDirectory(profileId);
 		if (!directory.exists())
 		{
-			return RewardSummary.fromEvents(java.util.Collections.emptyList(), sessionId);
+			return RewardSummary.fromEvents(java.util.Collections.emptyList(), sessionId,
+				Instant.now(), calendarZone);
 		}
 		List<Filepath> eventFiles;
 		try (Stream<Filepath> files = directory.walk(1))
@@ -104,7 +107,7 @@ public final class LootEventStore
 				throw new IOException("Could not read saved loot event", malformed);
 			}
 		}
-		return RewardSummary.fromEvents(events, sessionId);
+		return RewardSummary.fromEvents(events, sessionId, Instant.now(), calendarZone);
 	}
 
 	private Filepath eventDirectory(String profileId)

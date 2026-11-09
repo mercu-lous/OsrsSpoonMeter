@@ -1,36 +1,60 @@
 package com.lootluck.model;
 
-import java.util.ArrayList;
+import java.time.DayOfWeek;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.temporal.TemporalAdjusters;
+import java.util.Collections;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
-/** All-time and current-run statistics calculated from the same saved events. */
+/** Profile statistics for each scope, calculated from the same saved events. */
 public final class RewardSummary
 {
-	private final RewardStatistics allTime;
-	private final RewardStatistics currentRun;
+	private final Map<RewardScope, RewardStatistics> scopes;
+	private final ZoneId calendarZone;
 
-	private RewardSummary(RewardStatistics allTime, RewardStatistics currentRun)
+	private RewardSummary(Map<RewardScope, RewardStatistics> scopes, ZoneId calendarZone)
 	{
-		this.allTime = allTime;
-		this.currentRun = currentRun;
+		this.scopes = Collections.unmodifiableMap(new EnumMap<>(scopes));
+		this.calendarZone = calendarZone;
 	}
 
-	public static RewardSummary fromEvents(List<SavedLootEvent> events, String sessionId)
+	public static RewardSummary fromEvents(List<SavedLootEvent> events, String sessionId,
+		Instant asOfUtc, ZoneId calendarZone)
 	{
+		Objects.requireNonNull(events);
 		Objects.requireNonNull(sessionId);
-		List<SavedLootEvent> currentEvents = new ArrayList<>();
-		for (SavedLootEvent event : events)
-		{
-			if (sessionId.equals(event.getSessionId()))
-			{
-				currentEvents.add(event);
-			}
-		}
-		return new RewardSummary(RewardStatistics.summarize(events),
-			RewardStatistics.summarize(currentEvents));
+		Objects.requireNonNull(asOfUtc);
+		Objects.requireNonNull(calendarZone);
+		LocalDate today = asOfUtc.atZone(calendarZone).toLocalDate();
+		LocalDate weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+		EnumMap<RewardScope, RewardStatistics> results = new EnumMap<>(RewardScope.class);
+		results.put(RewardScope.ALL_TIME, RewardStatistics.summarize(events));
+		results.put(RewardScope.CURRENT_RUN, RewardStatistics.summarize(events,
+			event -> sessionId.equals(event.getSessionId())));
+		results.put(RewardScope.TODAY, calendarStats(events, today, asOfUtc, calendarZone));
+		results.put(RewardScope.THIS_WEEK, calendarStats(events, weekStart, asOfUtc, calendarZone));
+		results.put(RewardScope.THIS_MONTH, calendarStats(events,
+			today.withDayOfMonth(1), asOfUtc, calendarZone));
+		results.put(RewardScope.THIS_YEAR, calendarStats(events,
+			today.withDayOfYear(1), asOfUtc, calendarZone));
+		return new RewardSummary(results, calendarZone);
 	}
 
-	public RewardStatistics getAllTime() { return allTime; }
-	public RewardStatistics getCurrentRun() { return currentRun; }
+	private static RewardStatistics calendarStats(List<SavedLootEvent> events, LocalDate startDate,
+		Instant asOfUtc, ZoneId zone)
+	{
+		Instant start = startDate.atStartOfDay(zone).toInstant();
+		return RewardStatistics.summarize(events, event -> {
+			Instant observedAt = event.getObservedAtUtc();
+			return !observedAt.isBefore(start) && !observedAt.isAfter(asOfUtc);
+		});
+	}
+
+	public RewardStatistics get(RewardScope scope) { return scopes.get(scope); }
+	public ZoneId getCalendarZone() { return calendarZone; }
 }

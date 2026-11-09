@@ -6,6 +6,7 @@ import com.lootluck.model.LootValuation;
 import com.lootluck.model.ConversionQuote;
 import com.lootluck.model.ExpectedValueSnapshot;
 import com.lootluck.model.RewardClickCandidate;
+import com.lootluck.model.RewardScope;
 import com.lootluck.model.RewardStatistics;
 import com.lootluck.model.RewardSummary;
 import java.awt.BorderLayout;
@@ -28,7 +29,7 @@ public final class LootLuckPanel extends PluginPanel
 	private final JTextArea rewardText = new JTextArea();
 	private final JTextArea statisticsText = new JTextArea();
 	private final JTextArea storageText = new JTextArea();
-	private final JComboBox<String> statisticsScope = new JComboBox<>(new String[]{"All time", "Current plugin run"});
+	private final JComboBox<RewardScope> statisticsScope = new JComboBox<>(RewardScope.values());
 	private RewardSummary rewardSummary;
 	private String statisticsStatus = "Loading reward summary...";
 
@@ -129,8 +130,12 @@ public final class LootLuckPanel extends PluginPanel
 			statisticsText.setText(statisticsStatus);
 			return;
 		}
-		RewardStatistics stats = statisticsScope.getSelectedIndex() == 1
-			? rewardSummary.getCurrentRun() : rewardSummary.getAllTime();
+		RewardScope scope = (RewardScope) statisticsScope.getSelectedItem();
+		if (scope == null)
+		{
+			scope = RewardScope.ALL_TIME;
+		}
+		RewardStatistics stats = rewardSummary.get(scope);
 		StringBuilder text = new StringBuilder();
 		text.append("\nTiming-linked Open-stomach rewards: ").append(stats.getObservedNormalRewards());
 		text.append("\nValued normal rewards: ").append(stats.getValuedNormalRewards());
@@ -144,6 +149,11 @@ public final class LootLuckPanel extends PluginPanel
 				? "Unavailable" : signedGp(stats.getLastRewardDeltaGp()));
 		}
 		text.append("\nLoot linked by click timing; not total kill count.\n");
+		if (scope.isCalendar())
+		{
+			text.append("Time zone: ").append(rewardSummary.getCalendarZone().getId())
+				.append("; weeks start Monday.\n");
+		}
 		statisticsText.setText(text.toString());
 	}
 
