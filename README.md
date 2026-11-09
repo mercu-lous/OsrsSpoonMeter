@@ -50,8 +50,9 @@ Verified locally: the official template was retrieved, its Gradle wrapper downlo
 
 The All time / Current plugin run selector was checked in-game after a development-client restart. All time showed four timing-linked Open-stomach rewards, one valued reward, and −436,549 GP provisional difference. Current plugin run showed zero rewards. Both views retained the profile's nine saved events.
 
-1. Restart the development client and check the new calendar scopes and time-zone label. Their boundary calculations pass fixture tests but are not yet checked in-game.
-2. Observe whether Take-eggs rewards emit loot and find a dependable signal for no-loot completions before treating them as counted rewards or kills.
-3. Add boss rankings and expand boss coverage after reward attribution is more dependable.
+The Today, This week, This month, and This year options appeared in the development client, and the user confirmed that all calendar views worked as expected. Date-boundary behavior remains covered by deterministic tests, including a reward whose callbacks cross local midnight.
+
+1. Observe whether Take-eggs rewards emit loot and find a dependable signal for no-loot completions before treating them as counted rewards or kills.
+2. Add boss rankings and expand boss coverage after reward attribution is more dependable.
 
 The plugin does not scrape the Wiki on every kill or use the Wiki's displayed live average directly. It recalculates from the versioned table and current RuneLite prices. Values in the context file are illustrative or unverified.
