@@ -43,8 +43,29 @@ public class RewardStatisticsTest
 		assertNull(stats.getLastRewardDeltaGp());
 	}
 
+	@Test
+	public void filtersCurrentPluginRunWithoutChangingAllTimeTotals()
+	{
+		SavedLootEvent previous = event(1, 1, "OPEN_STOMACH", 100, 102, 450, 500, 1000L, "previous-run");
+		SavedLootEvent current = event(2, 2, "OPEN_STOMACH", 200, 202, 451, 1500, 1000L, "current-run");
+		RewardSummary summary = RewardSummary.fromEvents(Arrays.asList(previous, current), "current-run");
+		assertEquals(2, summary.getAllTime().getObservedNormalRewards());
+		assertEquals(2, summary.getAllTime().getValuedNormalRewards());
+		assertEquals(Long.valueOf(0), summary.getAllTime().getNetLuckGp());
+		assertEquals(1, summary.getCurrentRun().getObservedNormalRewards());
+		assertEquals(1, summary.getCurrentRun().getValuedNormalRewards());
+		assertEquals(Long.valueOf(500), summary.getCurrentRun().getNetLuckGp());
+	}
+
 	private static SavedLootEvent event(int eventNumber, int clickNumber, String method,
 		int clickTick, int lootTick, int itemId, long actualGp, Long expectedGp)
+	{
+		return event(eventNumber, clickNumber, method, clickTick, lootTick, itemId,
+			actualGp, expectedGp, "session");
+	}
+
+	private static SavedLootEvent event(int eventNumber, int clickNumber, String method,
+		int clickTick, int lootTick, int itemId, long actualGp, Long expectedGp, String sessionId)
 	{
 		Instant time = Instant.ofEpochSecond(lootTick);
 		RewardClickCandidate click = new RewardClickCandidate(id("click" + clickNumber), PROFILE,
@@ -56,7 +77,7 @@ public class RewardStatisticsTest
 		ExpectedValueSnapshot expected = expectedGp == null ? null : new ExpectedValueSnapshot(expectedGp,
 			MaggotKingExpectedValueService.SOURCE_VERSION, MaggotKingExpectedValueService.SOURCE_URL,
 			MaggotKingConversionCatalog.VERSION, "RUNELITE_JAGEX", time, Collections.emptyMap());
-		return new SavedLootEvent(id("event" + eventNumber), PROFILE, "session", time,
+		return new SavedLootEvent(id("event" + eventNumber), PROFILE, sessionId, time,
 			"Maggot King", "NPC", 0, 1, lootTick, Collections.singletonList(item), click, expected);
 	}
 

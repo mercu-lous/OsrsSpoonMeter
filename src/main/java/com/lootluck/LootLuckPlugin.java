@@ -8,7 +8,7 @@ import com.lootluck.model.LootItemPreview;
 import com.lootluck.model.MaggotKingConversionCatalog;
 import com.lootluck.model.MaggotKingExpectedValueService;
 import com.lootluck.model.RewardClickCandidate;
-import com.lootluck.model.RewardStatistics;
+import com.lootluck.model.RewardSummary;
 import com.lootluck.model.SavedLootEvent;
 import com.lootluck.storage.LootEventCodec;
 import com.lootluck.storage.LootEventStore;
@@ -156,7 +156,7 @@ public class LootLuckPlugin extends Plugin
 			currentProfileId = null;
 			panel.showObservation(observation, config.showItemIds(), null);
 			panel.showLootCorrelation(null, client.getTickCount());
-			panel.showStatistics(RewardStatistics.summarize(java.util.Collections.emptyList()));
+			panel.showStatistics(RewardSummary.fromEvents(java.util.Collections.emptyList(), sessionId));
 			panel.showStorage("No active profile", -1, "Event not saved: profile unavailable");
 			return;
 		}
@@ -184,7 +184,7 @@ public class LootLuckPlugin extends Plugin
 			{
 				boolean inserted = getStorage().save(savedEvent);
 				long count = getStorage().count(profileId);
-				RewardStatistics statistics = readStatistics(profileId);
+				RewardSummary statistics = readStatistics(profileId);
 				if (profileId.equals(currentProfileId))
 				{
 					if (statistics == null)
@@ -251,7 +251,7 @@ public class LootLuckPlugin extends Plugin
 		if (profileKey == null || profileKey.isEmpty())
 		{
 			currentProfileId = null;
-			panel.showStatistics(RewardStatistics.summarize(java.util.Collections.emptyList()));
+			panel.showStatistics(RewardSummary.fromEvents(java.util.Collections.emptyList(), sessionId));
 			panel.showStorage("No active profile", -1, "Log in to load saved events");
 			return;
 		}
@@ -263,7 +263,7 @@ public class LootLuckPlugin extends Plugin
 			try
 			{
 				long count = getStorage().count(profileId);
-				RewardStatistics statistics = readStatistics(profileId);
+				RewardSummary statistics = readStatistics(profileId);
 				if (profileId.equals(currentProfileId))
 				{
 					if (statistics == null)
@@ -309,11 +309,11 @@ public class LootLuckPlugin extends Plugin
 		return storage;
 	}
 
-	private RewardStatistics readStatistics(String profileId)
+	private RewardSummary readStatistics(String profileId)
 	{
 		try
 		{
-			return getStorage().statistics(profileId);
+			return getStorage().statistics(profileId, sessionId);
 		}
 		catch (Exception exception)
 		{

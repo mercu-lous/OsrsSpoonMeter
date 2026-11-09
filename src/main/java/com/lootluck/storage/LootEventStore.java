@@ -1,7 +1,7 @@
 package com.lootluck.storage;
 
 import com.lootluck.model.SavedLootEvent;
-import com.lootluck.model.RewardStatistics;
+import com.lootluck.model.RewardSummary;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -67,12 +67,12 @@ public final class LootEventStore
 		}
 	}
 
-	public RewardStatistics statistics(String profileId) throws IOException
+	public RewardSummary statistics(String profileId, String sessionId) throws IOException
 	{
 		Filepath directory = eventDirectory(profileId);
 		if (!directory.exists())
 		{
-			return RewardStatistics.summarize(java.util.Collections.emptyList());
+			return RewardSummary.fromEvents(java.util.Collections.emptyList(), sessionId);
 		}
 		List<Filepath> eventFiles;
 		try (Stream<Filepath> files = directory.walk(1))
@@ -104,7 +104,7 @@ public final class LootEventStore
 				throw new IOException("Could not read saved loot event", malformed);
 			}
 		}
-		return RewardStatistics.summarize(events);
+		return RewardSummary.fromEvents(events, sessionId);
 	}
 
 	private Filepath eventDirectory(String profileId)

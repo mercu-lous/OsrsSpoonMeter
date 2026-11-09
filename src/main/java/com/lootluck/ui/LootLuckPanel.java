@@ -7,11 +7,13 @@ import com.lootluck.model.ConversionQuote;
 import com.lootluck.model.ExpectedValueSnapshot;
 import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.RewardStatistics;
+import com.lootluck.model.RewardSummary;
 import java.awt.BorderLayout;
 import java.awt.Font;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -26,16 +28,23 @@ public final class LootLuckPanel extends PluginPanel
 	private final JTextArea rewardText = new JTextArea();
 	private final JTextArea statisticsText = new JTextArea();
 	private final JTextArea storageText = new JTextArea();
+	private final JComboBox<String> statisticsScope = new JComboBox<>(new String[]{"All time", "Current plugin run"});
+	private RewardSummary rewardSummary;
+	private String statisticsStatus = "Loading reward summary...";
 
 	public LootLuckPanel()
 	{
 		setLayout(new BorderLayout(0, 8));
-		add(new JLabel("Loot Luck Tracker"), BorderLayout.NORTH);
+		JPanel header = new JPanel(new BorderLayout(0, 4));
+		header.add(new JLabel("Loot Luck Tracker"), BorderLayout.NORTH);
+		statisticsScope.addActionListener(event -> renderStatistics());
+		header.add(statisticsScope, BorderLayout.SOUTH);
+		add(header, BorderLayout.NORTH);
 		eventText.setEditable(false);
 		eventText.setLineWrap(true);
 		eventText.setWrapStyleWord(true);
 		eventText.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-		eventText.setText("Waiting for a Maggot King loot event.\n\nGP values and kill attribution are coming next.");
+		eventText.setText("Waiting for a Maggot King loot event.");
 		add(new JScrollPane(eventText), BorderLayout.CENTER);
 		JPanel statusPanel = new JPanel(new BorderLayout(0, 8));
 		rewardText.setEditable(false);
@@ -61,7 +70,9 @@ public final class LootLuckPanel extends PluginPanel
 		SwingUtilities.invokeLater(() -> {
 			eventText.setText("Waiting for a Maggot King loot event on this profile.");
 			rewardText.setText("Reward option click: waiting");
-			statisticsText.setText("Loading reward summary...");
+			rewardSummary = null;
+			statisticsStatus = "Loading reward summary...";
+			renderStatistics();
 		});
 	}
 
@@ -94,29 +105,46 @@ public final class LootLuckPanel extends PluginPanel
 			"\nSaved events: " + (count < 0 ? "—" : count) + "\n" + status));
 	}
 
-	public void showStatistics(RewardStatistics stats)
+	public void showStatistics(RewardSummary summary)
 	{
 		SwingUtilities.invokeLater(() -> {
-			StringBuilder text = new StringBuilder();
-			text.append("\nTiming-linked Open-stomach rewards: ").append(stats.getObservedNormalRewards());
-			text.append("\nValued normal rewards: ").append(stats.getValuedNormalRewards());
-			text.append("\nObserved Take-eggs loot: ").append(stats.getObservedEggRewards());
-			if (stats.getNetLuckGp() != null)
-			{
-				text.append("\nConverted loot: ").append(gp(stats.getConvertedGp()));
-				text.append("\nExpected: ").append(gp(stats.getExpectedGp()));
-				text.append("\nProvisional GP vs expected: ").append(signedGp(stats.getNetLuckGp()));
-				text.append("\nLatest normal reward: ").append(stats.getLastRewardDeltaGp() == null
-					? "Unavailable" : signedGp(stats.getLastRewardDeltaGp()));
-			}
-			text.append("\nLoot linked by click timing; not total kill count.\n");
-			statisticsText.setText(text.toString());
+			rewardSummary = summary;
+			renderStatistics();
 		});
 	}
 
 	public void showStatisticsUnavailable()
 	{
-		SwingUtilities.invokeLater(() -> statisticsText.setText("Reward summary unavailable; check RuneLite log."));
+		SwingUtilities.invokeLater(() -> {
+			rewardSummary = null;
+			statisticsStatus = "Reward summary unavailable; check RuneLite log.";
+			renderStatistics();
+		});
+	}
+
+	private void renderStatistics()
+	{
+		if (rewardSummary == null)
+		{
+			statisticsText.setText(statisticsStatus);
+			return;
+		}
+		RewardStatistics stats = statisticsScope.getSelectedIndex() == 1
+			? rewardSummary.getCurrentRun() : rewardSummary.getAllTime();
+		StringBuilder text = new StringBuilder();
+		text.append("\nTiming-linked Open-stomach rewards: ").append(stats.getObservedNormalRewards());
+		text.append("\nValued normal rewards: ").append(stats.getValuedNormalRewards());
+		text.append("\nObserved Take-eggs loot: ").append(stats.getObservedEggRewards());
+		if (stats.getNetLuckGp() != null)
+		{
+			text.append("\nConverted loot: ").append(gp(stats.getConvertedGp()));
+			text.append("\nExpected: ").append(gp(stats.getExpectedGp()));
+			text.append("\nProvisional GP vs expected: ").append(signedGp(stats.getNetLuckGp()));
+			text.append("\nLatest normal reward: ").append(stats.getLastRewardDeltaGp() == null
+				? "Unavailable" : signedGp(stats.getLastRewardDeltaGp()));
+		}
+		text.append("\nLoot linked by click timing; not total kill count.\n");
+		statisticsText.setText(text.toString());
 	}
 
 	public void showObservation(LootEventPreview observation, boolean showItemIds,
