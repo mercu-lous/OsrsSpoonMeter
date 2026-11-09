@@ -3,6 +3,7 @@ package com.lootluck.ui;
 import com.lootluck.model.LootEventPreview;
 import com.lootluck.model.LootItemPreview;
 import com.lootluck.model.LootValuation;
+import com.lootluck.model.RewardClickCandidate;
 import java.awt.BorderLayout;
 import java.awt.Font;
 import java.time.ZoneId;
@@ -59,6 +60,22 @@ public final class LootLuckPanel extends PluginPanel
 		SwingUtilities.invokeLater(() -> rewardText.setText("Reward option clicked: " + option +
 			"\nTarget: " + target + " (#" + targetId + ")\nClient tick: " + clientTick +
 			"\nClick observed only; reward not yet confirmed."));
+	}
+
+	public void showLootCorrelation(RewardClickCandidate click, int lootTick)
+	{
+		SwingUtilities.invokeLater(() -> {
+			if (click == null)
+			{
+				rewardText.setText("Reward link: no recent matching click.\nKill not confirmed.");
+				return;
+			}
+			String method = "OPEN_STOMACH".equals(click.getMethod()) ? "Open-stomach" : "Take-eggs";
+			rewardText.setText("Possible reward: " + method +
+				"\nClick tick: " + click.getClientTick() + "; loot tick: " + lootTick +
+				"\nTarget ID: #" + click.getTargetId() +
+				"\nTiming match only; kill not confirmed.");
+		});
 	}
 
 	public void showStorage(String profile, long count, String status)

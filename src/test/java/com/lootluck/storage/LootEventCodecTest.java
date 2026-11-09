@@ -2,6 +2,7 @@ package com.lootluck.storage;
 
 import com.google.gson.Gson;
 import com.lootluck.model.LootItemPreview;
+import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.SavedLootEvent;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -40,7 +41,7 @@ public class LootEventCodecTest
 		assertEquals(event.getObservedAtUtc(), restored.getObservedAtUtc());
 		assertEquals("Maggot King", restored.getSource());
 		assertEquals("NPC", restored.getEventType());
-		assertTrue(json.contains("\"schemaVersion\":3"));
+		assertTrue(json.contains("\"schemaVersion\":4"));
 		assertTrue(json.contains("\"attributionStatus\":\"UNATTRIBUTED\""));
 		assertTrue(json.contains("\"valuationStatus\":\"COMPLETE\""));
 		assertTrue(json.contains("\"valuationMethod\":\"RUNELITE_GE_UNTRADEABLE_ZERO_V1\""));
@@ -102,12 +103,35 @@ public class LootEventCodecTest
 		SavedLootEvent restored = codec.decode(prior);
 		assertEquals(null, restored.getItems().get(0).getUnitPriceGp());
 		assertEquals(null, restored.getActualGp());
+		assertEquals(null, codec.decode(prior.replace("\"schemaVersion\":2", "\"schemaVersion\":3")).getRewardClick());
+	}
+
+	@Test
+	public void correlatesRecentClickWithoutConfirmingKill()
+	{
+		String profile = ProfileIds.fromRuneScapeProfileKey("account-one");
+		RewardClickCandidate click = new RewardClickCandidate("d5f88875-332c-429c-8adc-59b44b669a41",
+			profile, "OPEN_STOMACH", 339, 6514, Instant.parse("2026-11-09T06:12:22Z"));
+		assertTrue(click.matches(profile, 341));
+		assertFalse(click.matches(profile, 338));
+		assertFalse(click.matches(profile, 345));
+		assertFalse(click.matches(ProfileIds.fromRuneScapeProfileKey("account-two"), 341));
+
+		SavedLootEvent event = new SavedLootEvent("a798a7a2-7b4b-4d82-8e2b-d16a42db942b",
+			profile, "session-1", Instant.parse("2026-11-09T06:12:23Z"),
+			"Maggot King", "NPC", 0, 1, 341,
+			Arrays.asList(new LootItemPreview(33627, 1, "Dull ancient medal", 0L, "UNTRADEABLE_NO_GE_SALE")), click);
+		String json = codec.encode(event);
+		assertTrue(json.contains("\"attributionStatus\":\"CLICK_CORRELATED_UNCONFIRMED\""));
+		assertTrue(json.contains("\"rewardMethod\":\"OPEN_STOMACH\""));
+		assertEquals(click.getClickId(), codec.decode(json).getRewardClick().getClickId());
+		assertEquals(339, codec.decode(json).getRewardClick().getClientTick());
 	}
 
 	@Test(expected = IllegalArgumentException.class)
 	public void rejectsUnknownSchema()
 	{
-		codec.decode("{\"schemaVersion\":2}");
+		codec.decode("{\"schemaVersion\":5}");
 	}
 
 	@Test

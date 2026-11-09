@@ -19,10 +19,19 @@ public final class SavedLootEvent
 	private final int reportedAmount;
 	private final int clientTick;
 	private final List<LootItemPreview> items;
+	private final RewardClickCandidate rewardClick;
 
 	public SavedLootEvent(String eventId, String profileId, String sessionId, Instant observedAtUtc,
 		String source, String eventType, int combatLevel, int reportedAmount, int clientTick,
 		List<LootItemPreview> items)
+	{
+		this(eventId, profileId, sessionId, observedAtUtc, source, eventType, combatLevel,
+			reportedAmount, clientTick, items, null);
+	}
+
+	public SavedLootEvent(String eventId, String profileId, String sessionId, Instant observedAtUtc,
+		String source, String eventType, int combatLevel, int reportedAmount, int clientTick,
+		List<LootItemPreview> items, RewardClickCandidate rewardClick)
 	{
 		this.eventId = Objects.requireNonNull(eventId);
 		this.profileId = Objects.requireNonNull(profileId);
@@ -34,6 +43,11 @@ public final class SavedLootEvent
 		this.reportedAmount = reportedAmount;
 		this.clientTick = clientTick;
 		this.items = Collections.unmodifiableList(new ArrayList<>(items));
+		if (rewardClick != null && !rewardClick.matches(profileId, clientTick))
+		{
+			throw new IllegalArgumentException("Reward click is not a recent click on this profile");
+		}
+		this.rewardClick = rewardClick;
 	}
 
 	public String getEventId() { return eventId; }
@@ -46,5 +60,6 @@ public final class SavedLootEvent
 	public int getReportedAmount() { return reportedAmount; }
 	public int getClientTick() { return clientTick; }
 	public List<LootItemPreview> getItems() { return items; }
+	public RewardClickCandidate getRewardClick() { return rewardClick; }
 	public Long getActualGp() { return LootValuation.totalGpIfComplete(items); }
 }

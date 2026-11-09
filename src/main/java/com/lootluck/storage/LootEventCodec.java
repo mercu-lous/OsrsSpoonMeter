@@ -6,6 +6,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.lootluck.model.LootItemPreview;
+import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.SavedLootEvent;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -15,7 +16,7 @@ import java.util.UUID;
 /** Explicit versioned JSON avoids serializing RuneLite or JDK internals. */
 public final class LootEventCodec
 {
-	public static final int SCHEMA_VERSION = 3;
+	public static final int SCHEMA_VERSION = 4;
 	private final Gson gson;
 
 	public LootEventCodec(Gson gson)
@@ -36,8 +37,13 @@ public final class LootEventCodec
 		root.addProperty("combatLevel", event.getCombatLevel());
 		root.addProperty("reportedAmount", event.getReportedAmount());
 		root.addProperty("clientTick", event.getClientTick());
-		root.addProperty("attributionStatus", "UNATTRIBUTED");
-		root.addProperty("rewardMethod", "UNKNOWN");
+		RewardClickCandidate click = event.getRewardClick();
+		root.addProperty("attributionStatus", click == null ? "UNATTRIBUTED" : "CLICK_CORRELATED_UNCONFIRMED");
+		root.addProperty("rewardMethod", click == null ? "UNKNOWN" : click.getMethod());
+		root.add("rewardClickId", click == null ? JsonNull.INSTANCE : gson.toJsonTree(click.getClickId()));
+		root.add("rewardClickTick", click == null ? JsonNull.INSTANCE : gson.toJsonTree(click.getClientTick()));
+		root.add("rewardClickTargetId", click == null ? JsonNull.INSTANCE : gson.toJsonTree(click.getTargetId()));
+		root.add("rewardClickObservedAtUtc", click == null ? JsonNull.INSTANCE : gson.toJsonTree(click.getObservedAtUtc().toString()));
 		Long actualGp = event.getActualGp();
 		root.addProperty("valuationCapturedAtUtc", event.getObservedAtUtc().toString());
 		root.add("priceFeedTimestampUtc", JsonNull.INSTANCE);
@@ -69,7 +75,7 @@ public final class LootEventCodec
 			throw new IllegalArgumentException("Empty loot event JSON");
 		}
 		int version = requiredInt(root, "schemaVersion");
-		if (version != 1 && version != 2 && version != SCHEMA_VERSION)
+		if (version < 1 || version > SCHEMA_VERSION)
 		{
 			throw new IllegalArgumentException("Unsupported loot event schema");
 		}
@@ -91,11 +97,28 @@ public final class LootEventCodec
 				: new LootItemPreview(itemId, quantity, requiredString(item, "name"),
 					optionalLong(item, "unitPriceGp"), requiredString(item, "priceSource")));
 		}
-		SavedLootEvent event = new SavedLootEvent(eventId, requiredString(root, "profileId"),
+		String profileId = requiredString(root, "profileId");
+		RewardClickCandidate click = null;
+		if (version == SCHEMA_VERSION)
+		{
+			String attributionStatus = requiredString(root, "attributionStatus");
+			if ("CLICK_CORRELATED_UNCONFIRMED".equals(attributionStatus))
+			{
+				click = new RewardClickCandidate(requiredString(root, "rewardClickId"), profileId,
+					requiredString(root, "rewardMethod"), requiredInt(root, "rewardClickTick"),
+					requiredInt(root, "rewardClickTargetId"),
+					Instant.parse(requiredString(root, "rewardClickObservedAtUtc")));
+			}
+			else if (!"UNATTRIBUTED".equals(attributionStatus))
+			{
+				throw new IllegalArgumentException("Unsupported attribution status");
+			}
+		}
+		SavedLootEvent event = new SavedLootEvent(eventId, profileId,
 			requiredString(root, "sessionId"), Instant.parse(requiredString(root, "observedAtUtc")),
 			requiredString(root, "source"), requiredString(root, "eventType"),
 			requiredInt(root, "combatLevel"), requiredInt(root, "reportedAmount"),
-			requiredInt(root, "clientTick"), items);
+			requiredInt(root, "clientTick"), items, click);
 		if (version >= 2 && !java.util.Objects.equals(event.getActualGp(), optionalLong(root, "actualGp")))
 		{
 			throw new IllegalArgumentException("Loot event total does not match item prices");

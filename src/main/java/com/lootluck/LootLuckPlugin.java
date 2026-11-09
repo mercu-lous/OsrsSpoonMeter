@@ -4,6 +4,7 @@ import com.google.inject.Provides;
 import com.google.gson.Gson;
 import com.lootluck.model.LootEventPreview;
 import com.lootluck.model.LootItemPreview;
+import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.SavedLootEvent;
 import com.lootluck.storage.LootEventCodec;
 import com.lootluck.storage.LootEventStore;
@@ -75,6 +76,7 @@ public class LootLuckPlugin extends Plugin
 	private LootEventStore storage; // Accessed only by storageExecutor.
 	private String sessionId;
 	private volatile String currentProfileId;
+	private RewardClickCandidate recentRewardClick; // RuneLite client thread only.
 
 	@Override
 	protected void startUp()
@@ -103,6 +105,7 @@ public class LootLuckPlugin extends Plugin
 		clientToolbar.removeNavigation(navigationButton);
 		storageExecutor.shutdown(); // Allow queued event writes to finish without blocking shutdown.
 		currentProfileId = null;
+		recentRewardClick = null;
 		panel = null;
 		navigationButton = null;
 		log.debug("Loot Luck Tracker stopped");
@@ -141,16 +144,21 @@ public class LootLuckPlugin extends Plugin
 		if (profileKey == null || profileKey.isEmpty())
 		{
 			currentProfileId = null;
+			panel.showLootCorrelation(null, client.getTickCount());
 			panel.showStorage("No active profile", -1, "Event not saved: profile unavailable");
 			return;
 		}
 
 		String profileId = ProfileIds.fromRuneScapeProfileKey(profileKey);
 		currentProfileId = profileId;
+		int lootTick = client.getTickCount();
+		RewardClickCandidate click = recentRewardClick != null && recentRewardClick.matches(profileId, lootTick)
+			? recentRewardClick : null;
+		panel.showLootCorrelation(click, lootTick);
 		SavedLootEvent savedEvent = new SavedLootEvent(
 			UUID.randomUUID().toString(), profileId, sessionId, observation.getObservedAtUtc(),
 			observation.getSource(), observation.getType(), event.getCombatLevel(), event.getAmount(),
-			client.getTickCount(), items);
+			lootTick, items, click);
 		LootLuckPanel targetPanel = panel;
 		targetPanel.showStorage(shortProfileId(profileId), -1, "Saving event...");
 		submitStorageTask(() -> {
@@ -189,6 +197,11 @@ public class LootLuckPlugin extends Plugin
 		{
 			return;
 		}
+		String profileKey = configManager.getRSProfileKey();
+		recentRewardClick = profileKey == null || profileKey.isEmpty() ? null : new RewardClickCandidate(
+			UUID.randomUUID().toString(), ProfileIds.fromRuneScapeProfileKey(profileKey),
+			"open-stomach".equals(option) ? "OPEN_STOMACH" : "TAKE_EGGS",
+			client.getTickCount(), event.getId(), Instant.now());
 		panel.showRewardOption(Text.removeTags(event.getMenuOption()),
 			Text.removeTags(event.getMenuTarget()), event.getId(), client.getTickCount());
 		log.debug("Observed Maggot King reward option click: {} (target id {})", option, event.getId());
@@ -197,6 +210,7 @@ public class LootLuckPlugin extends Plugin
 	@Subscribe
 	public void onRuneScapeProfileChanged(RuneScapeProfileChanged event)
 	{
+		recentRewardClick = null;
 		if (panel != null)
 		{
 			panel.clearObservation();
