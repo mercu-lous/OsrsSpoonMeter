@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -93,12 +94,12 @@ public final class RewardSummary
 		String sessionId, Instant asOfUtc, ZoneId zone, LocalDate today, LocalDate weekStart)
 	{
 		Map<String, Instant> clickTimes = new HashMap<>();
-		for (SavedLootEvent event : events)
+		Map<SavedLootEvent, Instant> groupTimes = new IdentityHashMap<>();
+		for (LootRewardGroup group : LootRewardGrouper.group(events))
 		{
-			if (event.getRewardClick() != null)
+			for (SavedLootEvent event : group.getEvents())
 			{
-				clickTimes.merge(event.getRewardClick().getClickId(), event.getObservedAtUtc(),
-					(first, second) -> first.isAfter(second) ? first : second);
+				groupTimes.put(event, group.getObservedAtUtc());
 			}
 		}
 		for (NoLootConfirmation confirmation : confirmations.values())
@@ -109,8 +110,7 @@ public final class RewardSummary
 		List<RewardHistoryEntry> allEntries = new ArrayList<>();
 		for (SavedLootEvent event : events)
 		{
-			Instant scopeTime = event.getRewardClick() == null ? event.getObservedAtUtc()
-				: clickTimes.get(event.getRewardClick().getClickId());
+			Instant scopeTime = groupTimes.getOrDefault(event, event.getObservedAtUtc());
 			allEntries.add(RewardHistoryEntry.loot(event, scopeTime));
 		}
 		for (NoLootConfirmation confirmation : confirmations.values())

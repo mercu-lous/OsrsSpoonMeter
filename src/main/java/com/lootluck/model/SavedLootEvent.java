@@ -58,10 +58,6 @@ public final class SavedLootEvent
 			throw new IllegalArgumentException("Reward click is not a recent click on this profile");
 		}
 		this.rewardClick = rewardClick;
-		if (expectedSnapshot != null && (rewardClick == null || !"OPEN_STOMACH".equals(rewardClick.getMethod())))
-		{
-			throw new IllegalArgumentException("Normal expected value requires an Open-stomach click");
-		}
 		this.expectedSnapshot = expectedSnapshot;
 	}
 

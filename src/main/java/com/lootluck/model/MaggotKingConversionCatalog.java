@@ -15,18 +15,12 @@ public final class MaggotKingConversionCatalog
 	public static final String VERSION = "MAGGOT_KING_CONVERSIONS_V1";
 	private static final Map<Integer, Recipe> RECIPES = recipes();
 
-	@FunctionalInterface
-	public interface PriceLookup
-	{
-		long price(int outputItemId);
-	}
-
 	private MaggotKingConversionCatalog()
 	{
 	}
 
 	public static ConversionQuote quote(int itemId, int quantity, long directPrice,
-		boolean tradeable, PriceLookup prices, String priceSource)
+		boolean tradeable, ItemPriceLookup prices, String priceSource)
 	{
 		if (quantity < 0)
 		{

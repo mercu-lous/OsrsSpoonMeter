@@ -1,18 +1,14 @@
 package com.lootluck.model;
 
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-/** Counts observed reward clicks once, even when a click produces multiple loot callbacks. */
+/** Counts observed loot groups; a click is optional evidence for reward type. */
 public final class RewardStatistics
 {
 	private final int observedNormalRewards;
@@ -51,15 +47,6 @@ public final class RewardStatistics
 	public static RewardStatistics summarize(List<SavedLootEvent> events,
 		Predicate<SavedLootEvent> includeReward, Set<String> confirmedNoLootClickIds)
 	{
-		Map<String, List<SavedLootEvent>> groups = new LinkedHashMap<>();
-		for (SavedLootEvent event : events)
-		{
-			RewardClickCandidate click = event.getRewardClick();
-			if (click != null)
-			{
-				groups.computeIfAbsent(click.getClickId(), ignored -> new ArrayList<>()).add(event);
-			}
-		}
 		int normal = 0;
 		int eggs = 0;
 		int valued = 0;
@@ -67,28 +54,33 @@ public final class RewardStatistics
 		long expectedTotal = 0;
 		Long lastDelta = null;
 		Instant latestNormal = null;
-		for (List<SavedLootEvent> group : groups.values())
+		for (LootRewardGroup reward : LootRewardGrouper.group(events))
 		{
-			group.sort(Comparator.comparing(SavedLootEvent::getObservedAtUtc));
-			if (!includeReward.test(group.get(group.size() - 1)))
+			List<SavedLootEvent> group = reward.getEvents();
+			if (!includeReward.test(reward.getLastEvent()))
 			{
 				continue;
 			}
-			String method = group.get(0).getRewardClick().getMethod();
+			RewardClickCandidate click = null;
+			for (SavedLootEvent callback : group)
+			{
+				if (callback.getRewardClick() != null)
+				{
+					click = callback.getRewardClick();
+					break;
+				}
+			}
+			String method = click == null ? "UNKNOWN" : click.getMethod();
 			if ("TAKE_EGGS".equals(method))
 			{
-				if (!confirmedNoLootClickIds.contains(group.get(0).getRewardClick().getClickId()))
+				if (!confirmedNoLootClickIds.contains(click.getClickId()))
 				{
 					eggs++;
 				}
 				continue;
 			}
-			if (!"OPEN_STOMACH".equals(method))
-			{
-				continue;
-			}
 			normal++;
-			Instant groupTime = group.get(group.size() - 1).getObservedAtUtc();
+			Instant groupTime = reward.getObservedAtUtc();
 			boolean newest = latestNormal == null || groupTime.isAfter(latestNormal);
 			if (newest)
 			{
@@ -179,6 +171,7 @@ public final class RewardStatistics
 	}
 
 	public int getObservedNormalRewards() { return observedNormalRewards; }
+	public int getObservedLootRewards() { return observedNormalRewards + observedEggRewards; }
 	public int getObservedEggRewards() { return observedEggRewards; }
 	public int getValuedNormalRewards() { return valuedNormalRewards; }
 	public long getConvertedGp() { return convertedGp; }

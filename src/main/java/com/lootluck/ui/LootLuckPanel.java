@@ -1,6 +1,9 @@
 package com.lootluck.ui;
 
 import com.lootluck.model.LootEventPreview;
+import com.lootluck.model.BossDefinition;
+import com.lootluck.model.BossRegistry;
+import com.lootluck.model.ProfileDashboard;
 import com.lootluck.model.LootItemPreview;
 import com.lootluck.model.LootValuation;
 import com.lootluck.model.ConversionQuote;
@@ -13,9 +16,12 @@ import com.lootluck.model.RewardSummary;
 import com.lootluck.model.SavedLootEvent;
 import java.awt.BorderLayout;
 import java.awt.Font;
+import java.awt.GridLayout;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -30,24 +36,34 @@ public final class LootLuckPanel extends PluginPanel
 	private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z");
 	private final JTextArea overviewText = new JTextArea();
 	private final JTextArea historyText = new JTextArea();
+	private final JComboBox<BossDefinition> bossSelector = new JComboBox<>(
+		BossRegistry.bosses().toArray(new BossDefinition[0]));
 	private final JComboBox<RewardScope> statisticsScope = new JComboBox<>(RewardScope.values());
+	private final Map<BossDefinition, String> latestEvents = new HashMap<>();
+	private final Map<BossDefinition, String> latestLinks = new HashMap<>();
 	private String eventSection = "Waiting for a Maggot King loot event.";
 	private String rewardSection = "Reward option click: waiting";
 	private String statisticsSection = "Loading reward summary...";
 	private String storageSection = "Loading profile...";
-	private RewardSummary rewardSummary;
+	private ProfileDashboard dashboard;
 	private String statisticsStatus = "Loading reward summary...";
 
 	public LootLuckPanel()
 	{
 		setLayout(new BorderLayout(0, 8));
-		JPanel header = new JPanel(new BorderLayout(0, 4));
-		header.add(new JLabel("Loot Luck Tracker"), BorderLayout.NORTH);
+		JPanel header = new JPanel(new GridLayout(0, 1, 0, 4));
+		header.add(new JLabel("Loot Luck Tracker"));
+		bossSelector.addActionListener(event -> {
+			showSelectedBossSections();
+			renderStatistics();
+			renderHistory();
+		});
+		header.add(bossSelector);
 		statisticsScope.addActionListener(event -> {
 			renderStatistics();
 			renderHistory();
 		});
-		header.add(statisticsScope, BorderLayout.SOUTH);
+		header.add(statisticsScope);
 		add(header, BorderLayout.NORTH);
 		overviewText.setEditable(false);
 		overviewText.setLineWrap(true);
@@ -68,9 +84,10 @@ public final class LootLuckPanel extends PluginPanel
 	public void clearObservation()
 	{
 		SwingUtilities.invokeLater(() -> {
-			eventSection = "Waiting for a Maggot King loot event on this profile.";
-			rewardSection = "Reward option click: waiting";
-			rewardSummary = null;
+			latestEvents.clear();
+			latestLinks.clear();
+			showSelectedBossSections();
+			dashboard = null;
 			statisticsStatus = "Loading reward summary...";
 			renderStatistics();
 			renderHistory();
@@ -80,9 +97,11 @@ public final class LootLuckPanel extends PluginPanel
 	public void showRewardOption(String option, String target, int targetId, int clientTick)
 	{
 		SwingUtilities.invokeLater(() -> {
-			rewardSection = "Reward option clicked: " + option +
+			latestLinks.put(BossRegistry.MAGGOT_KING, "Reward option clicked: " + option +
 				"\nTarget: " + target + " (#" + targetId + ")\nClient tick: " + clientTick +
-				"\nClick observed only; reward not yet confirmed.";
+				"\nClick observed only; reward not yet confirmed.");
+			bossSelector.setSelectedItem(BossRegistry.MAGGOT_KING);
+			showSelectedBossSections();
 			renderOverview();
 		});
 	}
@@ -92,15 +111,29 @@ public final class LootLuckPanel extends PluginPanel
 		SwingUtilities.invokeLater(() -> {
 			if (click == null)
 			{
-				rewardSection = "Reward link: no recent matching click.\nKill not confirmed.";
+				latestLinks.put(BossRegistry.MAGGOT_KING,
+					"No recent matching menu click. Loot still counts as an observed reward group.\n"
+						+ "Reward method and expected GP unavailable; kill not confirmed.");
+				showSelectedBossSections();
 				renderOverview();
 				return;
 			}
 			String method = "OPEN_STOMACH".equals(click.getMethod()) ? "Open-stomach" : "Take-eggs";
-			rewardSection = "Possible reward: " + method +
+			latestLinks.put(BossRegistry.MAGGOT_KING, "Possible reward: " + method +
 				"\nClick tick: " + click.getClientTick() + "; loot tick: " + lootTick +
 				"\nTarget ID: #" + click.getTargetId() +
-				"\nTiming match only; kill not confirmed.";
+				"\nLoot callback counts as an observed reward group. Timing match supplies method only; kill not confirmed.");
+			showSelectedBossSections();
+			renderOverview();
+		});
+	}
+
+	public void showLootGroupHint(BossDefinition boss)
+	{
+		SwingUtilities.invokeLater(() -> {
+			latestLinks.put(boss, "Loot callback recorded. Nearby callbacks are grouped as one observed reward.\n"
+				+ "Kill count is not confirmed.");
+			showSelectedBossSections();
 			renderOverview();
 		});
 	}
@@ -108,11 +141,14 @@ public final class LootLuckPanel extends PluginPanel
 	public void showNoLootConfirmation(RewardClickCandidate click, int messageTick)
 	{
 		SwingUtilities.invokeLater(() -> {
-			eventSection = "Latest reward\n\nMethod: Take-eggs\nOutcome: No loot\n"
+			latestEvents.put(BossRegistry.MAGGOT_KING, "Latest reward\n\nMethod: Take-eggs\nOutcome: No loot\n"
 				+ "Confirmed by the game's egg-pop message.\n\n"
-				+ "No normal-loot expected GP is applied to this choice.";
-			rewardSection = "Take-eggs no-loot confirmed\nClick tick: " + click.getClientTick()
-				+ "; message tick: " + messageTick + "\nTarget ID: #" + click.getTargetId();
+				+ "No normal-loot expected GP is applied to this choice.");
+			latestLinks.put(BossRegistry.MAGGOT_KING,
+				"Take-eggs no-loot confirmed\nClick tick: " + click.getClientTick()
+				+ "; message tick: " + messageTick + "\nTarget ID: #" + click.getTargetId());
+			bossSelector.setSelectedItem(BossRegistry.MAGGOT_KING);
+			showSelectedBossSections();
 			renderOverview();
 		});
 	}
@@ -120,8 +156,10 @@ public final class LootLuckPanel extends PluginPanel
 	public void showNoLootMessageUnmatched(String reason)
 	{
 		SwingUtilities.invokeLater(() -> {
-			rewardSection = "Take-eggs no-loot message observed.\n"
-				+ reason + "\nNot counted or saved.";
+			latestLinks.put(BossRegistry.MAGGOT_KING, "Take-eggs no-loot message observed.\n"
+				+ reason + "\nNot counted or saved.");
+			bossSelector.setSelectedItem(BossRegistry.MAGGOT_KING);
+			showSelectedBossSections();
 			renderOverview();
 		});
 	}
@@ -130,15 +168,15 @@ public final class LootLuckPanel extends PluginPanel
 	{
 		SwingUtilities.invokeLater(() -> {
 			storageSection = "Profile: " + profile +
-				"\nSaved events: " + (count < 0 ? "—" : count) + "\n" + status;
+				"\nSaved events (all bosses): " + (count < 0 ? "—" : count) + "\n" + status;
 			renderOverview();
 		});
 	}
 
-	public void showStatistics(RewardSummary summary)
+	public void showStatistics(ProfileDashboard summary)
 	{
 		SwingUtilities.invokeLater(() -> {
-			rewardSummary = summary;
+			dashboard = summary;
 			renderStatistics();
 			renderHistory();
 		});
@@ -147,7 +185,7 @@ public final class LootLuckPanel extends PluginPanel
 	public void showStatisticsUnavailable()
 	{
 		SwingUtilities.invokeLater(() -> {
-			rewardSummary = null;
+			dashboard = null;
 			statisticsStatus = "Reward summary unavailable; check RuneLite log.";
 			renderStatistics();
 			renderHistory();
@@ -156,12 +194,14 @@ public final class LootLuckPanel extends PluginPanel
 
 	private void renderStatistics()
 	{
-		if (rewardSummary == null)
+		if (dashboard == null)
 		{
 			statisticsSection = statisticsStatus;
 			renderOverview();
 			return;
 		}
+		BossDefinition boss = selectedBoss();
+		RewardSummary rewardSummary = dashboard.get(boss);
 		RewardScope scope = (RewardScope) statisticsScope.getSelectedItem();
 		if (scope == null)
 		{
@@ -169,20 +209,33 @@ public final class LootLuckPanel extends PluginPanel
 		}
 		RewardStatistics stats = rewardSummary.get(scope);
 		StringBuilder text = new StringBuilder();
-		text.append("\nTiming-linked Open-stomach rewards: ").append(stats.getObservedNormalRewards());
-		text.append("\nValued normal rewards: ").append(stats.getValuedNormalRewards());
-		text.append("\nTake-eggs loot-linked: ").append(stats.getObservedEggRewards());
-		text.append("\nConfirmed no-loot Take-eggs: ")
-			.append(rewardSummary.getConfirmedNoLoot(scope));
+		text.append("\nObserved loot reward groups: ").append(stats.getObservedLootRewards());
+		if (boss == BossRegistry.MAGGOT_KING)
+		{
+			text.append("\nOpen-stomach or unlinked groups: ")
+				.append(stats.getObservedNormalRewards());
+			text.append("\nValued Open-stomach rewards: ").append(stats.getValuedNormalRewards());
+			text.append("\nTake-eggs loot-linked: ").append(stats.getObservedEggRewards());
+			text.append("\nConfirmed no-loot Take-eggs: ")
+				.append(rewardSummary.getConfirmedNoLoot(scope));
+		}
+		else if (stats.getValuedNormalRewards() > 0)
+		{
+			text.append("\nValued reward groups: ").append(stats.getValuedNormalRewards());
+		}
 		if (stats.getNetLuckGp() != null)
 		{
 			text.append("\nConverted loot: ").append(gp(stats.getConvertedGp()));
 			text.append("\nExpected: ").append(gp(stats.getExpectedGp()));
 			text.append("\nProvisional GP vs expected: ").append(signedGp(stats.getNetLuckGp()));
-			text.append("\nLatest normal reward: ").append(stats.getLastRewardDeltaGp() == null
+			text.append("\nLatest valued reward: ").append(stats.getLastRewardDeltaGp() == null
 				? "Unavailable" : signedGp(stats.getLastRewardDeltaGp()));
 		}
-		text.append("\nLoot linked by click timing; not total kill count.\n");
+		else if (boss != BossRegistry.MAGGOT_KING)
+		{
+			text.append("\nExpected GP table pending for this boss.");
+		}
+		text.append("\nGrouped from loot callbacks within five seconds; not confirmed kill count.\n");
 		if (scope.isCalendar())
 		{
 			text.append("Time zone: ").append(rewardSummary.getCalendarZone().getId())
@@ -200,17 +253,19 @@ public final class LootLuckPanel extends PluginPanel
 
 	private void renderHistory()
 	{
-		if (rewardSummary == null)
+		if (dashboard == null)
 		{
 			historyText.setText(statisticsStatus);
 			return;
 		}
+		RewardSummary rewardSummary = dashboard.get(selectedBoss());
 		RewardScope scope = (RewardScope) statisticsScope.getSelectedItem();
 		if (scope == null)
 		{
 			scope = RewardScope.ALL_TIME;
 		}
-		StringBuilder text = new StringBuilder("Saved observations, newest first (up to 30)\n\n");
+		StringBuilder text = new StringBuilder(selectedBoss().getName())
+			.append(" saved observations, newest first (up to 30)\n\n");
 		java.util.List<RewardHistoryEntry> entries = rewardSummary.getHistory(scope);
 		if (entries.isEmpty())
 		{
@@ -230,7 +285,7 @@ public final class LootLuckPanel extends PluginPanel
 			{
 				SavedLootEvent event = entry.getLootEvent();
 				RewardClickCandidate click = event.getRewardClick();
-				text.append(click == null ? "Unlinked loot event" :
+				text.append(click == null ? "Loot callback" :
 					"OPEN_STOMACH".equals(click.getMethod()) ? "Open-stomach timing link" : "Take-eggs timing link")
 					.append(" | event ").append(event.getEventId(), 0, 8).append('\n');
 				for (LootItemPreview item : event.getItems())
@@ -272,6 +327,7 @@ public final class LootLuckPanel extends PluginPanel
 		ExpectedValueSnapshot expected)
 	{
 		SwingUtilities.invokeLater(() -> {
+			BossDefinition boss = BossRegistry.findBySource(observation.getSource());
 			StringBuilder text = new StringBuilder();
 			text.append("Latest loot event\n\n");
 			text.append("Source: ").append(observation.getSource()).append('\n');
@@ -281,10 +337,14 @@ public final class LootLuckPanel extends PluginPanel
 			Long actualGp = LootValuation.totalGpIfComplete(observation.getItems());
 			Long convertedGp = LootValuation.totalConvertedGpIfComplete(observation.getItems());
 			text.append("Direct GE sale estimate: ").append(actualGp == null ? "Unavailable (missing price)" : gp(actualGp)).append('\n');
-			text.append("After-conversion GE estimate: ").append(convertedGp == null ? "Unavailable" : gp(convertedGp)).append("\n\n");
+			text.append(boss == BossRegistry.MAGGOT_KING
+				? "After-conversion GE estimate: " : "Direct-only GE estimate: ")
+				.append(convertedGp == null ? "Unavailable" : gp(convertedGp)).append("\n\n");
 			if (expected != null)
 			{
-				text.append("Expected Open-stomach GP: ").append(expected.getExpectedGp() == null
+				text.append(boss == BossRegistry.MAGGOT_KING
+					? "Expected Open-stomach GP: " : "Expected reward GP: ")
+					.append(expected.getExpectedGp() == null
 					? "Unavailable (missing table price)" : gp(expected.getExpectedGp())).append('\n');
 				text.append("Expected source: Wiki drop table + ")
 					.append("RUNELITE_WIKI_ADJUSTED".equals(expected.getPriceSource())
@@ -325,11 +385,39 @@ public final class LootLuckPanel extends PluginPanel
 			{
 				text.append("\nUntradeable items count as 0 direct GE GP. HA and conversion estimates are shown separately.\n");
 			}
-			text.append("\nConversion estimate uses captured output prices and assumes required skills and inputs. Costs and GE fees excluded. GP differences count observed rewards; total kill count is not inferred.");
-			eventSection = text.toString();
+			if (boss == BossRegistry.MAGGOT_KING)
+			{
+				text.append("\nConversion estimate uses captured output prices and assumes required skills and inputs. Costs and GE fees excluded. GP differences count observed rewards; total kill count is not inferred.");
+			}
+			else
+			{
+				text.append("\nDirect-only estimate uses captured RuneLite prices. Special item conversions and expected GP are pending. Reward groups are provisional, not confirmed kill count.");
+			}
+			if (boss != null)
+			{
+				latestEvents.put(boss, text.toString());
+				bossSelector.setSelectedItem(boss);
+				showSelectedBossSections();
+			}
 			renderOverview();
 			overviewText.setCaretPosition(0);
 		});
+	}
+
+	private BossDefinition selectedBoss()
+	{
+		BossDefinition selected = (BossDefinition) bossSelector.getSelectedItem();
+		return selected == null ? BossRegistry.MAGGOT_KING : selected;
+	}
+
+	private void showSelectedBossSections()
+	{
+		BossDefinition boss = selectedBoss();
+		eventSection = latestEvents.getOrDefault(boss,
+			"Waiting for a " + boss.getName() + " loot event on this profile.");
+		rewardSection = latestLinks.getOrDefault(boss, boss == BossRegistry.MAGGOT_KING
+			? "Reward option click: waiting"
+			: "Loot callbacks count as observed reward groups.");
 	}
 
 	private static String gp(long amount)

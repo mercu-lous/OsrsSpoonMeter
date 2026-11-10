@@ -9,7 +9,8 @@ import com.lootluck.model.LootItemPreview;
 import com.lootluck.model.ConversionComponent;
 import com.lootluck.model.ConversionQuote;
 import com.lootluck.model.ExpectedValueSnapshot;
-import com.lootluck.model.MaggotKingConversionCatalog;
+import com.lootluck.model.BossDefinition;
+import com.lootluck.model.BossRegistry;
 import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.SavedLootEvent;
 import java.time.Instant;
@@ -59,7 +60,9 @@ public final class LootEventCodec
 		Long convertedGp = event.getConvertedGp();
 		root.add("convertedGp", convertedGp == null ? JsonNull.INSTANCE : gson.toJsonTree(convertedGp));
 		root.addProperty("conversionValuationStatus", convertedGp == null ? "INCOMPLETE" : "COMPLETE");
-		root.addProperty("conversionCatalogVersion", MaggotKingConversionCatalog.VERSION);
+		BossDefinition boss = BossRegistry.findBySource(event.getSource());
+		root.addProperty("conversionCatalogVersion", boss == null ? "UNKNOWN"
+			: boss.getRules().conversionVersion());
 		ExpectedValueSnapshot expected = event.getExpectedSnapshot();
 		root.add("expectedGp", expected == null || expected.getExpectedGp() == null
 			? JsonNull.INSTANCE : gson.toJsonTree(expected.getExpectedGp()));

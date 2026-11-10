@@ -23,11 +23,11 @@ public final class MaggotKingExpectedValueService
 	{
 	}
 
-	public static ExpectedValueSnapshot capture(MaggotKingConversionCatalog.PriceLookup priceLookup,
+	public static ExpectedValueSnapshot capture(ItemPriceLookup priceLookup,
 		String priceSource, Instant capturedAtUtc)
 	{
 		Map<Integer, Long> prices = new LinkedHashMap<>();
-		MaggotKingConversionCatalog.PriceLookup recorded = id -> prices.computeIfAbsent(id,
+		ItemPriceLookup recorded = id -> prices.computeIfAbsent(id,
 			key -> Math.max(0L, priceLookup.price(key)));
 		BigDecimal fang = unitValue(ItemID.ELDER_VENATOR_FANG, recorded, priceSource);
 		BigDecimal kisten = unitValue(ItemID.CRIMSON_KISTEN, recorded, priceSource);
@@ -75,7 +75,7 @@ public final class MaggotKingExpectedValueService
 			MaggotKingConversionCatalog.VERSION, priceSource, capturedAtUtc, prices);
 	}
 
-	private static BigDecimal unitValue(int itemId, MaggotKingConversionCatalog.PriceLookup prices,
+	private static BigDecimal unitValue(int itemId, ItemPriceLookup prices,
 		String priceSource)
 	{
 		long directPrice = prices.price(itemId);

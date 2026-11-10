@@ -2,7 +2,7 @@ package com.lootluck.storage;
 
 import com.lootluck.model.NoLootConfirmation;
 import com.lootluck.model.SavedLootEvent;
-import com.lootluck.model.RewardSummary;
+import com.lootluck.model.ProfileDashboard;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -84,7 +84,7 @@ public final class LootEventStore
 		}
 	}
 
-	public RewardSummary statistics(String profileId, String sessionId, ZoneId calendarZone) throws IOException
+	public ProfileDashboard statistics(String profileId, String sessionId, ZoneId calendarZone) throws IOException
 	{
 		List<SavedLootEvent> events = new ArrayList<>();
 		for (Filepath file : jsonFiles(eventDirectory(profileId)))
@@ -115,7 +115,7 @@ public final class LootEventStore
 				throw new IOException("Could not read saved no-loot confirmation", malformed);
 			}
 		}
-		return RewardSummary.fromObservations(events, confirmations, sessionId, Instant.now(), calendarZone);
+		return ProfileDashboard.fromObservations(events, confirmations, sessionId, Instant.now(), calendarZone);
 	}
 
 	private static List<Filepath> jsonFiles(Filepath directory) throws IOException

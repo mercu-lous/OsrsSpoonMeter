@@ -3,6 +3,7 @@ package com.lootluck.storage;
 import com.google.gson.Gson;
 import com.lootluck.model.ConversionComponent;
 import com.lootluck.model.ConversionQuote;
+import com.lootluck.model.DirectGeConversion;
 import com.lootluck.model.ExpectedValueSnapshot;
 import com.lootluck.model.MaggotKingConversionCatalog;
 import com.lootluck.model.MaggotKingExpectedValueService;
@@ -57,6 +58,22 @@ public class LootEventCodecTest
 		assertTrue(json.contains("\"priceFeedTimestampUtc\":null"));
 		assertTrue(json.contains("\"expectedGp\":null"));
 		assertFalse(json.contains("account-one"));
+	}
+
+	@Test
+	public void storesGenericBossConversionVersionWithoutExpectedGp()
+	{
+		SavedLootEvent event = new SavedLootEvent("a798a7a2-7b4b-4d82-8e2b-d16a42db942b",
+			ProfileIds.fromRuneScapeProfileKey("account-one"), "session-1",
+			Instant.parse("2026-11-09T04:54:25Z"), "Vorkath", "NPC", 0, 1, 42,
+			Arrays.asList(new LootItemPreview(450, 1, "Test", 100L, "RUNELITE_JAGEX",
+				null, new ConversionQuote("DIRECT_GE", 100L, null, "RUNELITE_JAGEX", 1,
+					java.util.Collections.emptyList()))));
+		String json = codec.encode(event);
+		assertTrue(json.contains("\"conversionCatalogVersion\":\"" + DirectGeConversion.VERSION + "\""));
+		assertTrue(json.contains("\"expectedSource\":\"NOT_APPLIED\""));
+		assertEquals("Vorkath", codec.decode(json).getSource());
+		assertEquals(Long.valueOf(100), codec.decode(json).getConvertedGp());
 	}
 
 	@Test

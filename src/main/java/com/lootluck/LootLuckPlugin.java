@@ -5,11 +5,11 @@ import com.google.gson.Gson;
 import com.lootluck.model.LootEventPreview;
 import com.lootluck.model.ExpectedValueSnapshot;
 import com.lootluck.model.LootItemPreview;
-import com.lootluck.model.MaggotKingConversionCatalog;
-import com.lootluck.model.MaggotKingExpectedValueService;
+import com.lootluck.model.BossDefinition;
+import com.lootluck.model.BossRegistry;
 import com.lootluck.model.NoLootConfirmation;
 import com.lootluck.model.RewardClickCandidate;
-import com.lootluck.model.RewardSummary;
+import com.lootluck.model.ProfileDashboard;
 import com.lootluck.model.SavedLootEvent;
 import com.lootluck.storage.LootEventCodec;
 import com.lootluck.storage.LootEventStore;
@@ -59,8 +59,6 @@ import net.runelite.client.util.Text;
 )
 public class LootLuckPlugin extends Plugin
 {
-	private static final String SUPPORTED_SOURCE = "Maggot King";
-
 	@Inject
 	private Client client;
 
@@ -130,7 +128,8 @@ public class LootLuckPlugin extends Plugin
 	@Subscribe
 	public void onLootReceived(LootReceived event)
 	{
-		if (panel == null || !SUPPORTED_SOURCE.equals(event.getName()))
+		BossDefinition boss = BossRegistry.findBySource(event.getName());
+		if (panel == null || boss == null)
 		{
 			return;
 		}
@@ -152,7 +151,7 @@ public class LootLuckPlugin extends Plugin
 				directSale ? price : untradeable ? 0L : null,
 				directSale ? priceSource : untradeable ? "UNTRADEABLE_NO_GE_SALE" : "UNAVAILABLE",
 				highAlchGp > 0 ? (long) highAlchGp : null,
-				MaggotKingConversionCatalog.quote(item.getId(), item.getQuantity(), directSale ? price : 0,
+				boss.getRules().quote(item.getId(), item.getQuantity(), directSale ? price : 0,
 					canonicalComposition != null && canonicalComposition.isTradeable(),
 					outputId -> itemManager.getItemPriceWithSource(outputId, wikiPriceSetting), priceSource)));
 		}
@@ -167,9 +166,7 @@ public class LootLuckPlugin extends Plugin
 		{
 			currentProfileId = null;
 			panel.showObservation(observation, config.showItemIds(), null);
-			panel.showLootCorrelation(null, client.getTickCount());
-			panel.showStatistics(RewardSummary.fromEvents(java.util.Collections.emptyList(), sessionId,
-				Instant.now(), resolveCalendarZone()));
+			panel.showStatistics(ProfileDashboard.empty(sessionId, Instant.now(), resolveCalendarZone()));
 			panel.showStorage("No active profile", -1, "Event not saved: profile unavailable");
 			return;
 		}
@@ -177,15 +174,22 @@ public class LootLuckPlugin extends Plugin
 		String profileId = ProfileIds.fromRuneScapeProfileKey(profileKey);
 		currentProfileId = profileId;
 		int lootTick = client.getTickCount();
-		RewardClickCandidate click = recentRewardClick != null && recentRewardClick.matches(profileId, lootTick)
+		RewardClickCandidate click = boss == BossRegistry.MAGGOT_KING
+			&& recentRewardClick != null && recentRewardClick.matches(profileId, lootTick)
 			? recentRewardClick : null;
-		ExpectedValueSnapshot expected = click != null && "OPEN_STOMACH".equals(click.getMethod())
-			? MaggotKingExpectedValueService.capture(
-				id -> itemManager.getItemPriceWithSource(id, wikiPriceSetting),
-				wikiPriceSetting ? "RUNELITE_WIKI_ADJUSTED" : "RUNELITE_JAGEX",
-				observation.getObservedAtUtc()) : null;
+		ExpectedValueSnapshot expected = boss.getRules().expected(click,
+			id -> itemManager.getItemPriceWithSource(id, wikiPriceSetting),
+			wikiPriceSetting ? "RUNELITE_WIKI_ADJUSTED" : "RUNELITE_JAGEX",
+			observation.getObservedAtUtc());
 		panel.showObservation(observation, config.showItemIds(), expected);
-		panel.showLootCorrelation(click, lootTick);
+		if (boss == BossRegistry.MAGGOT_KING)
+		{
+			panel.showLootCorrelation(click, lootTick);
+		}
+		else
+		{
+			panel.showLootGroupHint(boss);
+		}
 		SavedLootEvent savedEvent = new SavedLootEvent(
 			UUID.randomUUID().toString(), profileId, sessionId, observation.getObservedAtUtc(),
 			observation.getSource(), observation.getType(), event.getCombatLevel(), event.getAmount(),
@@ -198,7 +202,7 @@ public class LootLuckPlugin extends Plugin
 			{
 				boolean inserted = getStorage().save(savedEvent);
 				long count = getStorage().count(profileId);
-				RewardSummary statistics = readStatistics(profileId, summaryZone);
+				ProfileDashboard statistics = readStatistics(profileId, summaryZone);
 				if (profileId.equals(currentProfileId))
 				{
 					if (statistics == null)
@@ -215,14 +219,14 @@ public class LootLuckPlugin extends Plugin
 			}
 			catch (Exception exception)
 			{
-				log.warn("Could not save Maggot King loot event", exception);
+				log.warn("Could not save {} loot event", boss.getName(), exception);
 				if (profileId.equals(currentProfileId))
 				{
 					targetPanel.showStorage(shortProfileId(profileId), -1, "Save failed; check RuneLite log");
 				}
 			}
 		});
-		log.debug("Observed Maggot King loot event with {} item stacks", items.size());
+		log.debug("Observed {} loot event with {} item stacks", boss.getName(), items.size());
 	}
 
 	@Subscribe
@@ -293,7 +297,7 @@ public class LootLuckPlugin extends Plugin
 			{
 				boolean inserted = getStorage().saveConfirmation(confirmation);
 				long count = getStorage().count(profileId);
-				RewardSummary statistics = readStatistics(profileId, summaryZone);
+				ProfileDashboard statistics = readStatistics(profileId, summaryZone);
 				if (profileId.equals(currentProfileId))
 				{
 					if (statistics == null)
@@ -361,8 +365,7 @@ public class LootLuckPlugin extends Plugin
 		if (profileKey == null || profileKey.isEmpty())
 		{
 			currentProfileId = null;
-			panel.showStatistics(RewardSummary.fromEvents(java.util.Collections.emptyList(), sessionId,
-				Instant.now(), summaryZone));
+			panel.showStatistics(ProfileDashboard.empty(sessionId, Instant.now(), summaryZone));
 			panel.showStorage("No active profile", -1, "Log in to load saved events");
 			return;
 		}
@@ -374,7 +377,7 @@ public class LootLuckPlugin extends Plugin
 			try
 			{
 				long count = getStorage().count(profileId);
-				RewardSummary statistics = readStatistics(profileId, summaryZone);
+				ProfileDashboard statistics = readStatistics(profileId, summaryZone);
 				if (profileId.equals(currentProfileId))
 				{
 					if (statistics == null)
@@ -421,7 +424,7 @@ public class LootLuckPlugin extends Plugin
 		return storage;
 	}
 
-	private RewardSummary readStatistics(String profileId, ZoneId summaryZone)
+	private ProfileDashboard readStatistics(String profileId, ZoneId summaryZone)
 	{
 		try
 		{
@@ -429,7 +432,7 @@ public class LootLuckPlugin extends Plugin
 		}
 		catch (Exception exception)
 		{
-			log.warn("Could not read Maggot King reward summary", exception);
+			log.warn("Could not read boss reward summary", exception);
 			return null;
 		}
 	}
