@@ -16,6 +16,7 @@ import com.lootluck.model.RewardStatistics;
 import com.lootluck.model.RewardSummary;
 import com.lootluck.model.SavedLootEvent;
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Font;
 import java.awt.GridLayout;
 import java.time.ZoneId;
@@ -29,13 +30,19 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
+import javax.swing.JTextPane;
 import javax.swing.SwingUtilities;
+import javax.swing.text.SimpleAttributeSet;
+import javax.swing.text.StyleConstants;
 import net.runelite.client.ui.PluginPanel;
 
 public final class LootLuckPanel extends PluginPanel
 {
 	private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z");
-	private final JTextArea overviewText = new JTextArea();
+	private static final Color GP_HIGHLIGHT = new Color(82, 62, 18);
+	private static final Color ABOVE_EXPECTED = new Color(178, 235, 128);
+	private static final Color BELOW_EXPECTED = new Color(255, 154, 145);
+	private final JTextPane overviewText = new JTextPane();
 	private final JTextArea historyText = new JTextArea();
 	private final JComboBox<BossDefinition> bossSelector = new JComboBox<>(
 		BossRegistry.bosses().toArray(new BossDefinition[0]));
@@ -48,6 +55,8 @@ public final class LootLuckPanel extends PluginPanel
 	private String storageSection = "Loading profile...";
 	private ProfileDashboard dashboard;
 	private String statisticsStatus = "Loading reward summary...";
+	private Long totalDeltaGp;
+	private Long latestDeltaGp;
 
 	public LootLuckPanel()
 	{
@@ -67,9 +76,9 @@ public final class LootLuckPanel extends PluginPanel
 		header.add(statisticsScope);
 		add(header, BorderLayout.NORTH);
 		overviewText.setEditable(false);
-		overviewText.setLineWrap(true);
-		overviewText.setWrapStyleWord(true);
 		overviewText.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+		overviewText.setBackground(historyText.getBackground());
+		overviewText.setForeground(historyText.getForeground());
 		renderOverview();
 		historyText.setEditable(false);
 		historyText.setLineWrap(true);
@@ -197,6 +206,8 @@ public final class LootLuckPanel extends PluginPanel
 	{
 		if (dashboard == null)
 		{
+			totalDeltaGp = null;
+			latestDeltaGp = null;
 			statisticsSection = statisticsStatus;
 			renderOverview();
 			return;
@@ -209,6 +220,8 @@ public final class LootLuckPanel extends PluginPanel
 			scope = RewardScope.ALL_TIME;
 		}
 		RewardStatistics stats = rewardSummary.get(scope);
+		totalDeltaGp = stats.getNetLuckGp();
+		latestDeltaGp = stats.getLastRewardDeltaGp();
 		StringBuilder text = new StringBuilder();
 		text.append("\nObserved loot reward groups: ").append(stats.getObservedLootRewards());
 		if (boss == BossRegistry.MAGGOT_KING)
@@ -254,8 +267,33 @@ public final class LootLuckPanel extends PluginPanel
 
 	private void renderOverview()
 	{
-		overviewText.setText(eventSection.trim() + "\n\n" + rewardSection.trim() + "\n\n"
-			+ statisticsSection.trim() + "\n\n" + storageSection.trim());
+		String content = eventSection.trim() + "\n\n" + rewardSection.trim() + "\n\n"
+			+ statisticsSection.trim() + "\n\n" + storageSection.trim();
+		overviewText.setText(content);
+		highlightGpDifference(content, "Provisional GP vs expected: ", totalDeltaGp);
+		highlightGpDifference(content, "Latest valued reward: ", latestDeltaGp);
+	}
+
+	private void highlightGpDifference(String content, String label, Long deltaGp)
+	{
+		if (deltaGp == null || deltaGp == 0)
+		{
+			return;
+		}
+		int start = content.indexOf(label);
+		if (start < 0)
+		{
+			return;
+		}
+		int end = content.indexOf('\n', start);
+		if (end < 0)
+		{
+			end = content.length();
+		}
+		SimpleAttributeSet style = new SimpleAttributeSet();
+		StyleConstants.setForeground(style, deltaGp > 0 ? ABOVE_EXPECTED : BELOW_EXPECTED);
+		StyleConstants.setBackground(style, GP_HIGHLIGHT);
+		overviewText.getStyledDocument().setCharacterAttributes(start, end - start, style, false);
 	}
 
 	private void renderHistory()
