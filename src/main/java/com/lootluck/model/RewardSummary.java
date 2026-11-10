@@ -5,8 +5,11 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.temporal.TemporalAdjusters;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -17,15 +20,19 @@ import java.util.function.Predicate;
 /** Profile statistics for each scope, calculated from the same saved events. */
 public final class RewardSummary
 {
+	private static final int HISTORY_LIMIT = 30;
 	private final Map<RewardScope, RewardStatistics> scopes;
 	private final Map<RewardScope, Integer> confirmedNoLoot;
+	private final Map<RewardScope, List<RewardHistoryEntry>> history;
 	private final ZoneId calendarZone;
 
 	private RewardSummary(Map<RewardScope, RewardStatistics> scopes,
-		Map<RewardScope, Integer> confirmedNoLoot, ZoneId calendarZone)
+		Map<RewardScope, Integer> confirmedNoLoot,
+		Map<RewardScope, List<RewardHistoryEntry>> history, ZoneId calendarZone)
 	{
 		this.scopes = Collections.unmodifiableMap(new EnumMap<>(scopes));
 		this.confirmedNoLoot = Collections.unmodifiableMap(new EnumMap<>(confirmedNoLoot));
+		this.history = Collections.unmodifiableMap(new EnumMap<>(history));
 		this.calendarZone = calendarZone;
 	}
 
@@ -76,7 +83,80 @@ public final class RewardSummary
 			today.withDayOfMonth(1), asOfUtc, calendarZone));
 		noLootCounts.put(RewardScope.THIS_YEAR, calendarNoLoot(uniqueConfirmations,
 			today.withDayOfYear(1), asOfUtc, calendarZone));
-		return new RewardSummary(results, noLootCounts, calendarZone);
+		EnumMap<RewardScope, List<RewardHistoryEntry>> histories = buildHistory(events,
+			uniqueConfirmations, sessionId, asOfUtc, calendarZone, today, weekStart);
+		return new RewardSummary(results, noLootCounts, histories, calendarZone);
+	}
+
+	private static EnumMap<RewardScope, List<RewardHistoryEntry>> buildHistory(
+		List<SavedLootEvent> events, Map<String, NoLootConfirmation> confirmations,
+		String sessionId, Instant asOfUtc, ZoneId zone, LocalDate today, LocalDate weekStart)
+	{
+		Map<String, Instant> clickTimes = new HashMap<>();
+		for (SavedLootEvent event : events)
+		{
+			if (event.getRewardClick() != null)
+			{
+				clickTimes.merge(event.getRewardClick().getClickId(), event.getObservedAtUtc(),
+					(first, second) -> first.isAfter(second) ? first : second);
+			}
+		}
+		for (NoLootConfirmation confirmation : confirmations.values())
+		{
+			clickTimes.merge(confirmation.getClick().getClickId(), confirmation.getObservedAtUtc(),
+				(first, second) -> first.isAfter(second) ? first : second);
+		}
+		List<RewardHistoryEntry> allEntries = new ArrayList<>();
+		for (SavedLootEvent event : events)
+		{
+			Instant scopeTime = event.getRewardClick() == null ? event.getObservedAtUtc()
+				: clickTimes.get(event.getRewardClick().getClickId());
+			allEntries.add(RewardHistoryEntry.loot(event, scopeTime));
+		}
+		for (NoLootConfirmation confirmation : confirmations.values())
+		{
+			allEntries.add(RewardHistoryEntry.noLoot(confirmation,
+				clickTimes.get(confirmation.getClick().getClickId())));
+		}
+		allEntries.sort(Comparator.comparing(RewardHistoryEntry::getObservedAtUtc).reversed());
+		EnumMap<RewardScope, Instant> starts = new EnumMap<>(RewardScope.class);
+		starts.put(RewardScope.TODAY, today.atStartOfDay(zone).toInstant());
+		starts.put(RewardScope.THIS_WEEK, weekStart.atStartOfDay(zone).toInstant());
+		starts.put(RewardScope.THIS_MONTH, today.withDayOfMonth(1).atStartOfDay(zone).toInstant());
+		starts.put(RewardScope.THIS_YEAR, today.withDayOfYear(1).atStartOfDay(zone).toInstant());
+		EnumMap<RewardScope, List<RewardHistoryEntry>> histories = new EnumMap<>(RewardScope.class);
+		for (RewardScope scope : RewardScope.values())
+		{
+			List<RewardHistoryEntry> included = new ArrayList<>();
+			for (RewardHistoryEntry entry : allEntries)
+			{
+				if (inScope(scope, entry, sessionId, asOfUtc, starts))
+				{
+					included.add(entry);
+					if (included.size() == HISTORY_LIMIT)
+					{
+						break;
+					}
+				}
+			}
+			histories.put(scope, Collections.unmodifiableList(included));
+		}
+		return histories;
+	}
+
+	private static boolean inScope(RewardScope scope, RewardHistoryEntry entry,
+		String sessionId, Instant asOfUtc, Map<RewardScope, Instant> starts)
+	{
+		if (scope == RewardScope.ALL_TIME)
+		{
+			return true;
+		}
+		if (scope == RewardScope.CURRENT_RUN)
+		{
+			return sessionId.equals(entry.getSessionId());
+		}
+		Instant time = entry.getScopeTimeUtc();
+		return !time.isBefore(starts.get(scope)) && !time.isAfter(asOfUtc);
 	}
 
 	private static RewardStatistics calendarStats(List<SavedLootEvent> events, LocalDate startDate,
@@ -115,5 +195,6 @@ public final class RewardSummary
 
 	public RewardStatistics get(RewardScope scope) { return scopes.get(scope); }
 	public int getConfirmedNoLoot(RewardScope scope) { return confirmedNoLoot.get(scope); }
+	public List<RewardHistoryEntry> getHistory(RewardScope scope) { return history.get(scope); }
 	public ZoneId getCalendarZone() { return calendarZone; }
 }

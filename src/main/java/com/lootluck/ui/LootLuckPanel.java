@@ -6,9 +6,11 @@ import com.lootluck.model.LootValuation;
 import com.lootluck.model.ConversionQuote;
 import com.lootluck.model.ExpectedValueSnapshot;
 import com.lootluck.model.RewardClickCandidate;
+import com.lootluck.model.RewardHistoryEntry;
 import com.lootluck.model.RewardScope;
 import com.lootluck.model.RewardStatistics;
 import com.lootluck.model.RewardSummary;
+import com.lootluck.model.SavedLootEvent;
 import java.awt.BorderLayout;
 import java.awt.Font;
 import java.time.ZoneId;
@@ -18,6 +20,7 @@ import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import net.runelite.client.ui.PluginPanel;
@@ -29,6 +32,7 @@ public final class LootLuckPanel extends PluginPanel
 	private final JTextArea rewardText = new JTextArea();
 	private final JTextArea statisticsText = new JTextArea();
 	private final JTextArea storageText = new JTextArea();
+	private final JTextArea historyText = new JTextArea();
 	private final JComboBox<RewardScope> statisticsScope = new JComboBox<>(RewardScope.values());
 	private RewardSummary rewardSummary;
 	private String statisticsStatus = "Loading reward summary...";
@@ -38,15 +42,19 @@ public final class LootLuckPanel extends PluginPanel
 		setLayout(new BorderLayout(0, 8));
 		JPanel header = new JPanel(new BorderLayout(0, 4));
 		header.add(new JLabel("Loot Luck Tracker"), BorderLayout.NORTH);
-		statisticsScope.addActionListener(event -> renderStatistics());
+		statisticsScope.addActionListener(event -> {
+			renderStatistics();
+			renderHistory();
+		});
 		header.add(statisticsScope, BorderLayout.SOUTH);
 		add(header, BorderLayout.NORTH);
+		JPanel overview = new JPanel(new BorderLayout(0, 8));
 		eventText.setEditable(false);
 		eventText.setLineWrap(true);
 		eventText.setWrapStyleWord(true);
 		eventText.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
 		eventText.setText("Waiting for a Maggot King loot event.");
-		add(new JScrollPane(eventText), BorderLayout.CENTER);
+		overview.add(new JScrollPane(eventText), BorderLayout.CENTER);
 		JPanel statusPanel = new JPanel(new BorderLayout(0, 8));
 		rewardText.setEditable(false);
 		rewardText.setLineWrap(true);
@@ -63,7 +71,16 @@ public final class LootLuckPanel extends PluginPanel
 		storageText.setWrapStyleWord(true);
 		storageText.setText("Loading profile...");
 		statusPanel.add(storageText, BorderLayout.SOUTH);
-		add(statusPanel, BorderLayout.SOUTH);
+		overview.add(statusPanel, BorderLayout.SOUTH);
+		historyText.setEditable(false);
+		historyText.setLineWrap(true);
+		historyText.setWrapStyleWord(true);
+		historyText.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+		historyText.setText("Loading saved observations...");
+		JTabbedPane tabs = new JTabbedPane();
+		tabs.addTab("Overview", overview);
+		tabs.addTab("History", new JScrollPane(historyText));
+		add(tabs, BorderLayout.CENTER);
 	}
 
 	public void clearObservation()
@@ -74,6 +91,7 @@ public final class LootLuckPanel extends PluginPanel
 			rewardSummary = null;
 			statisticsStatus = "Loading reward summary...";
 			renderStatistics();
+			renderHistory();
 		});
 	}
 
@@ -128,6 +146,7 @@ public final class LootLuckPanel extends PluginPanel
 		SwingUtilities.invokeLater(() -> {
 			rewardSummary = summary;
 			renderStatistics();
+			renderHistory();
 		});
 	}
 
@@ -137,6 +156,7 @@ public final class LootLuckPanel extends PluginPanel
 			rewardSummary = null;
 			statisticsStatus = "Reward summary unavailable; check RuneLite log.";
 			renderStatistics();
+			renderHistory();
 		});
 	}
 
@@ -174,6 +194,76 @@ public final class LootLuckPanel extends PluginPanel
 				.append("; weeks start Monday.\n");
 		}
 		statisticsText.setText(text.toString());
+	}
+
+	private void renderHistory()
+	{
+		if (rewardSummary == null)
+		{
+			historyText.setText(statisticsStatus);
+			return;
+		}
+		RewardScope scope = (RewardScope) statisticsScope.getSelectedItem();
+		if (scope == null)
+		{
+			scope = RewardScope.ALL_TIME;
+		}
+		StringBuilder text = new StringBuilder("Saved observations, newest first (up to 30)\n\n");
+		java.util.List<RewardHistoryEntry> entries = rewardSummary.getHistory(scope);
+		if (entries.isEmpty())
+		{
+			text.append("No saved observations in this view.");
+		}
+		for (RewardHistoryEntry entry : entries)
+		{
+			text.append(TIME_FORMAT.withZone(rewardSummary.getCalendarZone())
+				.format(entry.getObservedAtUtc())).append('\n');
+			if (entry.isNoLootConfirmation())
+			{
+				text.append("Take-eggs: no loot confirmed by game message\n");
+				text.append("Click tick: ").append(entry.getNoLootConfirmation().getClick().getClientTick())
+					.append("; message tick: ").append(entry.getNoLootConfirmation().getClientTick()).append('\n');
+			}
+			else
+			{
+				SavedLootEvent event = entry.getLootEvent();
+				RewardClickCandidate click = event.getRewardClick();
+				text.append(click == null ? "Unlinked loot event" :
+					"OPEN_STOMACH".equals(click.getMethod()) ? "Open-stomach timing link" : "Take-eggs timing link")
+					.append(" | event ").append(event.getEventId(), 0, 8).append('\n');
+				for (LootItemPreview item : event.getItems())
+				{
+					text.append(item.getQuantity()).append(" × ").append(item.getName())
+						.append(" (#").append(item.getItemId()).append(')');
+					text.append(item.getUnitPriceGp() == null ? " @ direct price unavailable"
+						: " @ " + gp(item.getUnitPriceGp()) + " direct each").append('\n');
+					ConversionQuote quote = item.getConversionQuote();
+					if (quote != null && quote.getStackGp() != null
+						&& !"DIRECT_GE".equals(quote.getMethod())
+						&& !"NO_GE_CONVERSION".equals(quote.getMethod()))
+					{
+						text.append("  After conversion: ").append(gp(quote.getStackGp())).append('\n');
+					}
+				}
+				if (event.getItems().isEmpty())
+				{
+					text.append("No item stacks in this callback\n");
+				}
+				text.append("Direct event value: ").append(event.getActualGp() == null
+					? "Unavailable" : gp(event.getActualGp())).append('\n');
+				text.append("Converted event value: ").append(event.getConvertedGp() == null
+					? "Unavailable" : gp(event.getConvertedGp())).append('\n');
+				if (event.getExpectedSnapshot() != null)
+				{
+					Long expectedGp = event.getExpectedSnapshot().getExpectedGp();
+					text.append("Expected for linked reward: ")
+						.append(expectedGp == null ? "Unavailable" : gp(expectedGp)).append('\n');
+				}
+			}
+			text.append('\n');
+		}
+		historyText.setText(text.toString());
+		historyText.setCaretPosition(0);
 	}
 
 	public void showObservation(LootEventPreview observation, boolean showItemIds,

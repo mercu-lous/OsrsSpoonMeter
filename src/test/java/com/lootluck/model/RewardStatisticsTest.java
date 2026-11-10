@@ -59,6 +59,10 @@ public class RewardStatisticsTest
 		assertEquals(1, summary.get(RewardScope.CURRENT_RUN).getObservedNormalRewards());
 		assertEquals(1, summary.get(RewardScope.CURRENT_RUN).getValuedNormalRewards());
 		assertEquals(Long.valueOf(500), summary.get(RewardScope.CURRENT_RUN).getNetLuckGp());
+		assertEquals(2, summary.getHistory(RewardScope.ALL_TIME).size());
+		assertEquals(1, summary.getHistory(RewardScope.CURRENT_RUN).size());
+		assertEquals(current.getEventId(), summary.getHistory(RewardScope.ALL_TIME).get(0)
+			.getLootEvent().getEventId());
 	}
 
 	@Test
@@ -88,11 +92,13 @@ public class RewardStatisticsTest
 		Instant asOf = Instant.parse("2026-11-09T06:01:00Z");
 		SavedLootEvent beforeMidnight = eventAt(1, 1, Instant.parse("2026-11-09T05:59:59Z"), 100, 1000L);
 		SavedLootEvent afterMidnight = eventAt(2, 1, Instant.parse("2026-11-09T06:00:01Z"), 200, 1000L);
-		RewardStatistics today = RewardSummary.fromEvents(Arrays.asList(beforeMidnight, afterMidnight),
-			"session", asOf, ZoneId.of("America/Chicago")).get(RewardScope.TODAY);
+		RewardSummary summary = RewardSummary.fromEvents(Arrays.asList(beforeMidnight, afterMidnight),
+			"session", asOf, ZoneId.of("America/Chicago"));
+		RewardStatistics today = summary.get(RewardScope.TODAY);
 		assertEquals(1, today.getObservedNormalRewards());
 		assertEquals(300, today.getConvertedGp());
 		assertEquals(1000, today.getExpectedGp());
+		assertEquals(2, summary.getHistory(RewardScope.TODAY).size());
 	}
 
 	@Test
@@ -107,6 +113,9 @@ public class RewardStatisticsTest
 		assertEquals(1, summary.getConfirmedNoLoot(RewardScope.ALL_TIME));
 		assertEquals(1, summary.getConfirmedNoLoot(RewardScope.CURRENT_RUN));
 		assertEquals(1, summary.getConfirmedNoLoot(RewardScope.TODAY));
+		assertEquals(2, summary.getHistory(RewardScope.ALL_TIME).size());
+		assertEquals(1, summary.getHistory(RewardScope.ALL_TIME).stream()
+			.filter(RewardHistoryEntry::isNoLootConfirmation).count());
 	}
 
 	@Test
