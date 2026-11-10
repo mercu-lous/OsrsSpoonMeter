@@ -32,7 +32,7 @@ public final class DirectGeConversion
 						Collections.emptyList());
 			}
 		}
-		return new ConversionQuote(tradeable ? "MISSING_DIRECT_PRICE" : "UNSUPPORTED_UNTRADEABLE",
-			null, null, priceSource, 1, Collections.emptyList());
+		return new ConversionQuote(tradeable ? "MISSING_DIRECT_PRICE" : "NO_GE_CONVERSION",
+			tradeable ? null : 0L, null, priceSource, 1, Collections.emptyList());
 	}
 }

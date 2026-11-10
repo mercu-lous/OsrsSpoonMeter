@@ -25,11 +25,31 @@ public class BossRegistryAndGroupingTest
 		assertSame(BossRegistry.MAGGOT_KING, BossRegistry.findBySource(" Maggot King "));
 		assertSame(BossRegistry.VORKATH, BossRegistry.findBySource("vorkath"));
 		assertSame(BossRegistry.ZULRAH, BossRegistry.findBySource("ZULRAH"));
+		assertSame(BossRegistry.CORRUPTED_GAUNTLET, BossRegistry.findBySource("Corrupted Hunllef"));
+		assertSame(BossRegistry.GAUNTLET, BossRegistry.findBySource("Crystalline Hunllef"));
 		assertNull(BossRegistry.findBySource("Guard"));
-		assertEquals(3, BossRegistry.bosses().size());
+		assertEquals(5, BossRegistry.bosses().size());
 		assertEquals(DirectGeConversion.VERSION, BossRegistry.VORKATH.getRules().conversionVersion());
-		assertNull(BossRegistry.ZULRAH.getRules().expected(null, id -> 1L,
-			"RUNELITE_JAGEX", START));
+		assertEquals(Long.valueOf(144404), BossRegistry.VORKATH.getRules().expected(null,
+			id -> 1L, "RUNELITE_JAGEX", START).getExpectedGp());
+		assertEquals(Long.valueOf(116535), BossRegistry.ZULRAH.getRules().expected(null,
+			id -> 1L, "RUNELITE_JAGEX", START).getExpectedGp());
+		assertEquals(Long.valueOf(550380), BossRegistry.CORRUPTED_GAUNTLET.getRules().expected(null,
+			id -> 1L, "RUNELITE_JAGEX", START).getExpectedGp());
+		assertEquals(Long.valueOf(150815), BossRegistry.GAUNTLET.getRules().expected(null,
+			id -> 1L, "RUNELITE_JAGEX", START).getExpectedGp());
+		assertEquals(FixedExpectedBossRules.PRICE_SOURCE,
+			BossRegistry.GAUNTLET.getRules().expected(null, id -> 1L,
+				"RUNELITE_JAGEX", START).getPriceSource());
+	}
+
+	@Test
+	public void genericUntradeablesContributeZeroDirectGe()
+	{
+		ConversionQuote quote = BossRegistry.GAUNTLET.getRules().quote(23951, 7, 0L,
+			false, id -> 0L, "RUNELITE_JAGEX");
+		assertEquals("NO_GE_CONVERSION", quote.getMethod());
+		assertEquals(Long.valueOf(0), quote.getStackGp());
 	}
 
 	@Test
@@ -68,7 +88,9 @@ public class BossRegistryAndGroupingTest
 			event("m", PROFILE, "run", "Maggot King", 0, null),
 			event("v1", PROFILE, "run", "Vorkath", 1, null),
 			event("v2", PROFILE, "run", "Vorkath", 2, null),
-			event("z", PROFILE, "run", "Zulrah", 3, null));
+			event("z", PROFILE, "run", "Zulrah", 3, null),
+			event("cg", PROFILE, "run", "Corrupted Hunllef", 4, null),
+			event("rg", PROFILE, "run", "Crystalline Hunllef", 5, null));
 		ProfileDashboard dashboard = ProfileDashboard.fromObservations(events,
 			Collections.emptyList(), "run", START.plusSeconds(10), ZoneOffset.UTC);
 		assertEquals(1, dashboard.get(BossRegistry.MAGGOT_KING).get(RewardScope.ALL_TIME)
@@ -76,6 +98,10 @@ public class BossRegistryAndGroupingTest
 		assertEquals(1, dashboard.get(BossRegistry.VORKATH).get(RewardScope.ALL_TIME)
 			.getObservedLootRewards());
 		assertEquals(1, dashboard.get(BossRegistry.ZULRAH).get(RewardScope.ALL_TIME)
+			.getObservedLootRewards());
+		assertEquals(1, dashboard.get(BossRegistry.CORRUPTED_GAUNTLET).get(RewardScope.ALL_TIME)
+			.getObservedLootRewards());
+		assertEquals(1, dashboard.get(BossRegistry.GAUNTLET).get(RewardScope.ALL_TIME)
 			.getObservedLootRewards());
 		assertEquals(2, dashboard.get(BossRegistry.VORKATH).getHistory(RewardScope.ALL_TIME).size());
 		assertEquals("Vorkath", dashboard.get(BossRegistry.VORKATH).getHistory(RewardScope.ALL_TIME)

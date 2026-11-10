@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.lootluck.model.ConversionComponent;
 import com.lootluck.model.ConversionQuote;
 import com.lootluck.model.DirectGeConversion;
+import com.lootluck.model.BossRegistry;
 import com.lootluck.model.ExpectedValueSnapshot;
 import com.lootluck.model.MaggotKingConversionCatalog;
 import com.lootluck.model.MaggotKingExpectedValueService;
@@ -74,6 +75,23 @@ public class LootEventCodecTest
 		assertTrue(json.contains("\"expectedSource\":\"NOT_APPLIED\""));
 		assertEquals("Vorkath", codec.decode(json).getSource());
 		assertEquals(Long.valueOf(100), codec.decode(json).getConvertedGp());
+	}
+
+	@Test
+	public void storesFixedBossExpectedValueWithoutMenuClick()
+	{
+		Instant observedAt = Instant.parse("2026-11-10T12:00:00Z");
+		SavedLootEvent event = new SavedLootEvent("a798a7a2-7b4b-4d82-8e2b-d16a42db942b",
+			ProfileIds.fromRuneScapeProfileKey("account-one"), "session-1", observedAt,
+			"Crystalline Hunllef", "NPC", 0, 1, 42,
+			Arrays.asList(new LootItemPreview(450, 1, "Test", 100L, "RUNELITE_JAGEX",
+				null, new ConversionQuote("DIRECT_GE", 100L, null, "RUNELITE_JAGEX", 1,
+					java.util.Collections.emptyList()))), null,
+			BossRegistry.GAUNTLET.getRules().expected(null, id -> 1L, "RUNELITE_JAGEX", observedAt));
+		SavedLootEvent restored = codec.decode(codec.encode(event));
+		assertEquals(Long.valueOf(150815), restored.getExpectedSnapshot().getExpectedGp());
+		assertEquals(null, restored.getRewardClick());
+		assertEquals("Crystalline Hunllef", restored.getSource());
 	}
 
 	@Test

@@ -8,6 +8,7 @@ import com.lootluck.model.LootItemPreview;
 import com.lootluck.model.LootValuation;
 import com.lootluck.model.ConversionQuote;
 import com.lootluck.model.ExpectedValueSnapshot;
+import com.lootluck.model.FixedExpectedBossRules;
 import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.RewardHistoryEntry;
 import com.lootluck.model.RewardScope;
@@ -225,15 +226,21 @@ public final class LootLuckPanel extends PluginPanel
 		}
 		if (stats.getNetLuckGp() != null)
 		{
-			text.append("\nConverted loot: ").append(gp(stats.getConvertedGp()));
-			text.append("\nExpected: ").append(gp(stats.getExpectedGp()));
+			text.append(boss == BossRegistry.MAGGOT_KING ? "\nConverted loot: " : "\nDirect GE loot: ")
+				.append(gp(stats.getConvertedGp()));
+			text.append(boss == BossRegistry.MAGGOT_KING ? "\nExpected: " : "\nFixed expected: ")
+				.append(gp(stats.getExpectedGp()));
 			text.append("\nProvisional GP vs expected: ").append(signedGp(stats.getNetLuckGp()));
 			text.append("\nLatest valued reward: ").append(stats.getLastRewardDeltaGp() == null
 				? "Unavailable" : signedGp(stats.getLastRewardDeltaGp()));
 		}
 		else if (boss != BossRegistry.MAGGOT_KING)
 		{
-			text.append("\nExpected GP table pending for this boss.");
+			text.append("\nGP comparison unavailable for an incomplete reward value.");
+		}
+		if (boss != BossRegistry.MAGGOT_KING)
+		{
+			text.append("\nFixed Wiki baseline; price changes and untradeable conversions are not updated.");
 		}
 		text.append("\nGrouped from loot callbacks within five seconds; not confirmed kill count.\n");
 		if (scope.isCalendar())
@@ -313,7 +320,7 @@ public final class LootLuckPanel extends PluginPanel
 				if (event.getExpectedSnapshot() != null)
 				{
 					Long expectedGp = event.getExpectedSnapshot().getExpectedGp();
-					text.append("Expected for linked reward: ")
+					text.append("Expected for reward group: ")
 						.append(expectedGp == null ? "Unavailable" : gp(expectedGp)).append('\n');
 				}
 			}
@@ -346,10 +353,17 @@ public final class LootLuckPanel extends PluginPanel
 					? "Expected Open-stomach GP: " : "Expected reward GP: ")
 					.append(expected.getExpectedGp() == null
 					? "Unavailable (missing table price)" : gp(expected.getExpectedGp())).append('\n');
-				text.append("Expected source: Wiki drop table + ")
-					.append("RUNELITE_WIKI_ADJUSTED".equals(expected.getPriceSource())
-						? "RuneLite Wiki prices" : "RuneLite Jagex prices")
-					.append("\n\n");
+				if (FixedExpectedBossRules.PRICE_SOURCE.equals(expected.getPriceSource()))
+				{
+					text.append("Expected source: fixed Wiki average; RuneLite prices are used for observed loot.\n\n");
+				}
+				else
+				{
+					text.append("Expected source: Wiki drop table + ")
+						.append("RUNELITE_WIKI_ADJUSTED".equals(expected.getPriceSource())
+							? "RuneLite Wiki prices" : "RuneLite Jagex prices")
+						.append("\n\n");
+				}
 			}
 			boolean hasUntradeable = false;
 			for (LootItemPreview item : observation.getItems())
@@ -391,7 +405,7 @@ public final class LootLuckPanel extends PluginPanel
 			}
 			else
 			{
-				text.append("\nDirect-only estimate uses captured RuneLite prices. Special item conversions and expected GP are pending. Reward groups are provisional, not confirmed kill count.");
+				text.append("\nDirect-only estimate uses captured RuneLite prices. The fixed expected GP estimate may drift as prices change. Reward groups are provisional, not confirmed kill count.");
 			}
 			if (boss != null)
 			{

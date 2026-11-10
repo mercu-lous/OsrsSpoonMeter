@@ -5,7 +5,7 @@ An early RuneLite plugin for comparing boss loot with expected gross GP value. T
 ## Current prototype
 
 - Adds a **Loot Luck Tracker** sidebar button and panel.
-- Observes RuneLite Loot Tracker's `LootReceived` event for the curated boss sources in `BossRegistry`: **Maggot King**, **Vorkath**, and **Zulrah**. The user confirmed a `Maggot King` / `NPC` event with item IDs `33627` and `33628` in-game on November 8, 2026. Vorkath and Zulrah source names and panel behavior still need in-game checks.
+- Observes RuneLite Loot Tracker's `LootReceived` event for the curated boss sources in `BossRegistry`: **Maggot King**, **Vorkath**, **Zulrah**, **Corrupted Hunllef**, and **Crystalline Hunllef**. The user confirmed a `Maggot King` / `NPC` event with item IDs `33627` and `33628` in-game on November 8, 2026. The other four source names and panel behavior still need in-game checks.
 - Saves each supported loot callback's item IDs and quantities, UTC timestamp, event ID, client tick, RuneLite event metadata fields, and session ID. The sidebar shows a per-profile saved-event count. The boss selector keeps each boss's Overview and History separate.
 - Snapshots each item's name, RuneLite price, and available high-alchemy reference value when the event arrives. The panel shows both **direct GE sale** and **after-conversion GE** estimates. Explicitly untradeable items count as 0 direct GE GP. Conversion output prices, recipe weights, source links, and results are frozen in new event files. A missing output price or unsupported untradeable makes the after-conversion total unavailable rather than silently treating it as zero.
 - Records when the valuation was captured; RuneLite does not expose the underlying price-feed timestamp through this lookup, so that field remains unavailable.
@@ -21,11 +21,20 @@ The screenshot from the first prototype was a temporary preview; that earlier ev
 
 ### Boss registry and price policy
 
-`BossRegistry` maps RuneLite loot source names to stable boss definitions, a five-second grouping window, a Wiki source URL, and valuation rules. Maggot King keeps its versioned conversion and expected-value rules. Vorkath and Zulrah currently use direct GE prices only; they show observed reward groups and itemized History, but no GP luck score yet. Their item conversions and expected-value tables must be verified before adding a score.
+`BossRegistry` maps RuneLite loot source names to stable boss definitions, a five-second grouping window, a Wiki source URL, and valuation rules. Maggot King keeps its versioned conversion and expected-value rules. The other four bosses currently use direct GE prices for observed loot and fixed Wiki average baselines for an early GP comparison. The Gauntlet aliases use the specific Hunllef names so regular and corrupted rewards do not mix. These are observed loot groups, not verified kill counts; failed Gauntlet attempts and unobserved rewards are not counted.
+
+| Boss | Fixed expected GP per observed reward | Source and basis |
+| --- | ---: | --- |
+| Vorkath | 144,404 | [Wiki average Vorkath kill](https://oldschool.runescape.wiki/w/Vorkath) |
+| Zulrah | 116,535 | [Wiki average Zulrah kill](https://oldschool.runescape.wiki/w/Zulrah) |
+| Corrupted Gauntlet | 550,380 | [Wiki completion average](https://oldschool.runescape.wiki/w/Money_making_guide/Completing_The_Corrupted_Gauntlet) of 670,199, less 718,913 ÷ 6 GP of crystal-shard conversion value |
+| The Gauntlet | 150,815 | [Wiki completion average](https://oldschool.runescape.wiki/w/Money_making_guide/Completing_The_Gauntlet) of 239,103, less 618,013 ÷ 7 GP of crystal-shard conversion value |
+
+These values were captured on November 10, 2026 as `WIKI_FIXED_DIRECT_GE_2026_11_10_V1`. They do not update with RuneLite prices, while observed loot does. The Gauntlet adjustment aligns the fixed baseline with direct GE sale value: untradeable crystal shards contribute 0 direct GE GP. The Wiki's shard conversion assumption requires 97 Herblore and inputs, so it is excluded here. Rounding uses whole GP. The displayed GP difference is provisional and will drift as market prices change.
 
 To add another capture-only boss, add a definition in `BossRegistry` with the exact `LootReceived` source name and `DirectGeBossRules`. When its drop mechanics are verified, give it a dedicated `BossRules` implementation. Keep old source aliases in the registry so existing saved events remain visible after a name change.
 
-Expected-value **drop probabilities and item IDs** belong in versioned local boss rules. The Wiki URL documents their source and can be reviewed when rules change. RuneLite supplies current item prices when a callback is captured, and both actual and expected inputs are saved with that event. This avoids depending on Wiki display labels for uniques or scraping a live average per reward. A manually maintained GP override may be useful for a boss with unresolved mechanics, but is not implemented in this increment.
+Long term, expected-value **drop probabilities and item IDs** belong in versioned local boss rules. The Wiki URL documents their source and can be reviewed when rules change. RuneLite supplies current item prices when a callback is captured. For the new four bosses, the saved expected snapshot contains a fixed sourced GP number and no item price inputs. This avoids depending on Wiki display labels for uniques or scraping a live average per reward.
 
 ### Conversion catalog v1
 
@@ -67,7 +76,7 @@ The Take-eggs no-loot signal passes fixture tests but has not been checked in-ga
 
 The History tab was checked in-game under All time and showed saved Tarnished necklace, Tarnished halberd, and other earlier itemized events. The same screenshots revealed a large empty gap in Overview between the latest-event text and the reward summary. Overview now renders those sections in one scrollable text area. The user confirmed in-game that the reward summary appears directly below the latest-event text with the gap removed.
 
-1. Check ordinary Vorkath and Zulrah loot in the development client to verify their source names, callback timing, item valuation, and selector behavior. No rare drop is needed.
+1. Check ordinary Vorkath and Zulrah loot, plus a regular and corrupted Gauntlet chest, in the development client to verify source names, callback timing, item valuation, and selector behavior. No rare drop is needed. Verify that crystal shards appear in the captured callback and contribute 0 direct GE GP.
 2. Expand the boss allowlist after checking RuneLite's actual source names; add item-ID-based, versioned expected-value and conversion rules boss by boss.
 3. Add percentage luck and GP per observed reward, then boss rankings as more bosses have verified baselines.
 
