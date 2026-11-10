@@ -56,9 +56,8 @@ The Today, This week, This month, and This year options appeared in the developm
 
 The Take-eggs no-loot signal passes fixture tests but has not been checked in-game. A message outside the five-tick window is displayed as uncounted for diagnosis. The user is continuing with normal Open-stomach rewards, so no Take-eggs trial is required for the next increment.
 
-The History tab was checked in-game under All time and showed saved Tarnished necklace, Tarnished halberd, and other earlier itemized events. The same screenshots revealed a large empty gap in Overview between the latest-event text and the reward summary. Overview now renders those sections in one scrollable text area; this layout fix passes the local build but has not yet been checked in-game.
+The History tab was checked in-game under All time and showed saved Tarnished necklace, Tarnished halberd, and other earlier itemized events. The same screenshots revealed a large empty gap in Overview between the latest-event text and the reward summary. Overview now renders those sections in one scrollable text area. The user confirmed in-game that the reward summary appears directly below the latest-event text with the gap removed.
 
-1. Restart the development client and check that the Overview reward summary appears directly below the latest-event text. No new kill is required.
-2. Add percentage luck and GP per observed reward, then boss rankings as more bosses are supported.
+1. Add percentage luck and GP per observed reward, then boss rankings as more bosses are supported.
 
 The plugin does not scrape the Wiki on every kill or use the Wiki's displayed live average directly. It recalculates from the versioned table and current RuneLite prices. Values in the context file are illustrative or unverified.
