@@ -28,12 +28,13 @@ import net.runelite.client.ui.PluginPanel;
 public final class LootLuckPanel extends PluginPanel
 {
 	private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss z");
-	private final JTextArea eventText = new JTextArea();
-	private final JTextArea rewardText = new JTextArea();
-	private final JTextArea statisticsText = new JTextArea();
-	private final JTextArea storageText = new JTextArea();
+	private final JTextArea overviewText = new JTextArea();
 	private final JTextArea historyText = new JTextArea();
 	private final JComboBox<RewardScope> statisticsScope = new JComboBox<>(RewardScope.values());
+	private String eventSection = "Waiting for a Maggot King loot event.";
+	private String rewardSection = "Reward option click: waiting";
+	private String statisticsSection = "Loading reward summary...";
+	private String storageSection = "Loading profile...";
 	private RewardSummary rewardSummary;
 	private String statisticsStatus = "Loading reward summary...";
 
@@ -48,37 +49,18 @@ public final class LootLuckPanel extends PluginPanel
 		});
 		header.add(statisticsScope, BorderLayout.SOUTH);
 		add(header, BorderLayout.NORTH);
-		JPanel overview = new JPanel(new BorderLayout(0, 8));
-		eventText.setEditable(false);
-		eventText.setLineWrap(true);
-		eventText.setWrapStyleWord(true);
-		eventText.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-		eventText.setText("Waiting for a Maggot King loot event.");
-		overview.add(new JScrollPane(eventText), BorderLayout.CENTER);
-		JPanel statusPanel = new JPanel(new BorderLayout(0, 8));
-		rewardText.setEditable(false);
-		rewardText.setLineWrap(true);
-		rewardText.setWrapStyleWord(true);
-		rewardText.setText("Reward option click: waiting");
-		statusPanel.add(rewardText, BorderLayout.NORTH);
-		statisticsText.setEditable(false);
-		statisticsText.setLineWrap(true);
-		statisticsText.setWrapStyleWord(true);
-		statisticsText.setText("Loading reward summary...");
-		statusPanel.add(statisticsText, BorderLayout.CENTER);
-		storageText.setEditable(false);
-		storageText.setLineWrap(true);
-		storageText.setWrapStyleWord(true);
-		storageText.setText("Loading profile...");
-		statusPanel.add(storageText, BorderLayout.SOUTH);
-		overview.add(statusPanel, BorderLayout.SOUTH);
+		overviewText.setEditable(false);
+		overviewText.setLineWrap(true);
+		overviewText.setWrapStyleWord(true);
+		overviewText.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+		renderOverview();
 		historyText.setEditable(false);
 		historyText.setLineWrap(true);
 		historyText.setWrapStyleWord(true);
 		historyText.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
 		historyText.setText("Loading saved observations...");
 		JTabbedPane tabs = new JTabbedPane();
-		tabs.addTab("Overview", overview);
+		tabs.addTab("Overview", new JScrollPane(overviewText));
 		tabs.addTab("History", new JScrollPane(historyText));
 		add(tabs, BorderLayout.CENTER);
 	}
@@ -86,8 +68,8 @@ public final class LootLuckPanel extends PluginPanel
 	public void clearObservation()
 	{
 		SwingUtilities.invokeLater(() -> {
-			eventText.setText("Waiting for a Maggot King loot event on this profile.");
-			rewardText.setText("Reward option click: waiting");
+			eventSection = "Waiting for a Maggot King loot event on this profile.";
+			rewardSection = "Reward option click: waiting";
 			rewardSummary = null;
 			statisticsStatus = "Loading reward summary...";
 			renderStatistics();
@@ -97,9 +79,12 @@ public final class LootLuckPanel extends PluginPanel
 
 	public void showRewardOption(String option, String target, int targetId, int clientTick)
 	{
-		SwingUtilities.invokeLater(() -> rewardText.setText("Reward option clicked: " + option +
-			"\nTarget: " + target + " (#" + targetId + ")\nClient tick: " + clientTick +
-			"\nClick observed only; reward not yet confirmed."));
+		SwingUtilities.invokeLater(() -> {
+			rewardSection = "Reward option clicked: " + option +
+				"\nTarget: " + target + " (#" + targetId + ")\nClient tick: " + clientTick +
+				"\nClick observed only; reward not yet confirmed.";
+			renderOverview();
+		});
 	}
 
 	public void showLootCorrelation(RewardClickCandidate click, int lootTick)
@@ -107,38 +92,47 @@ public final class LootLuckPanel extends PluginPanel
 		SwingUtilities.invokeLater(() -> {
 			if (click == null)
 			{
-				rewardText.setText("Reward link: no recent matching click.\nKill not confirmed.");
+				rewardSection = "Reward link: no recent matching click.\nKill not confirmed.";
+				renderOverview();
 				return;
 			}
 			String method = "OPEN_STOMACH".equals(click.getMethod()) ? "Open-stomach" : "Take-eggs";
-			rewardText.setText("Possible reward: " + method +
+			rewardSection = "Possible reward: " + method +
 				"\nClick tick: " + click.getClientTick() + "; loot tick: " + lootTick +
 				"\nTarget ID: #" + click.getTargetId() +
-				"\nTiming match only; kill not confirmed.");
+				"\nTiming match only; kill not confirmed.";
+			renderOverview();
 		});
 	}
 
 	public void showNoLootConfirmation(RewardClickCandidate click, int messageTick)
 	{
 		SwingUtilities.invokeLater(() -> {
-			eventText.setText("Latest reward\n\nMethod: Take-eggs\nOutcome: No loot\n"
+			eventSection = "Latest reward\n\nMethod: Take-eggs\nOutcome: No loot\n"
 				+ "Confirmed by the game's egg-pop message.\n\n"
-				+ "No normal-loot expected GP is applied to this choice.");
-			rewardText.setText("Take-eggs no-loot confirmed\nClick tick: " + click.getClientTick()
-				+ "; message tick: " + messageTick + "\nTarget ID: #" + click.getTargetId());
+				+ "No normal-loot expected GP is applied to this choice.";
+			rewardSection = "Take-eggs no-loot confirmed\nClick tick: " + click.getClientTick()
+				+ "; message tick: " + messageTick + "\nTarget ID: #" + click.getTargetId();
+			renderOverview();
 		});
 	}
 
 	public void showNoLootMessageUnmatched(String reason)
 	{
-		SwingUtilities.invokeLater(() -> rewardText.setText("Take-eggs no-loot message observed.\n"
-			+ reason + "\nNot counted or saved."));
+		SwingUtilities.invokeLater(() -> {
+			rewardSection = "Take-eggs no-loot message observed.\n"
+				+ reason + "\nNot counted or saved.";
+			renderOverview();
+		});
 	}
 
 	public void showStorage(String profile, long count, String status)
 	{
-		SwingUtilities.invokeLater(() -> storageText.setText("Profile: " + profile +
-			"\nSaved events: " + (count < 0 ? "—" : count) + "\n" + status));
+		SwingUtilities.invokeLater(() -> {
+			storageSection = "Profile: " + profile +
+				"\nSaved events: " + (count < 0 ? "—" : count) + "\n" + status;
+			renderOverview();
+		});
 	}
 
 	public void showStatistics(RewardSummary summary)
@@ -164,7 +158,8 @@ public final class LootLuckPanel extends PluginPanel
 	{
 		if (rewardSummary == null)
 		{
-			statisticsText.setText(statisticsStatus);
+			statisticsSection = statisticsStatus;
+			renderOverview();
 			return;
 		}
 		RewardScope scope = (RewardScope) statisticsScope.getSelectedItem();
@@ -193,7 +188,14 @@ public final class LootLuckPanel extends PluginPanel
 			text.append("Time zone: ").append(rewardSummary.getCalendarZone().getId())
 				.append("; weeks start Monday.\n");
 		}
-		statisticsText.setText(text.toString());
+		statisticsSection = text.toString();
+		renderOverview();
+	}
+
+	private void renderOverview()
+	{
+		overviewText.setText(eventSection.trim() + "\n\n" + rewardSection.trim() + "\n\n"
+			+ statisticsSection.trim() + "\n\n" + storageSection.trim());
 	}
 
 	private void renderHistory()
@@ -324,8 +326,9 @@ public final class LootLuckPanel extends PluginPanel
 				text.append("\nUntradeable items count as 0 direct GE GP. HA and conversion estimates are shown separately.\n");
 			}
 			text.append("\nConversion estimate uses captured output prices and assumes required skills and inputs. Costs and GE fees excluded. GP differences count observed rewards; total kill count is not inferred.");
-			eventText.setText(text.toString());
-			eventText.setCaretPosition(0);
+			eventSection = text.toString();
+			renderOverview();
+			overviewText.setCaretPosition(0);
 		});
 	}
 
