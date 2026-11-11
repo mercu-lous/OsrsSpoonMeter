@@ -5,7 +5,7 @@ An early RuneLite plugin for comparing boss loot with expected gross GP value. T
 ## Current prototype
 
 - Adds a **Loot Luck Tracker** sidebar button and panel.
-- Observes RuneLite Loot Tracker's `LootReceived` event for the curated boss sources in `BossRegistry`: **Maggot King**, **Vorkath**, **Zulrah**, **Corrupted Hunllef**, and **Crystalline Hunllef**. The user confirmed a `Maggot King` / `NPC` event with item IDs `33627` and `33628` in-game on November 8, 2026. The other four source names and panel behavior still need in-game checks.
+- Observes RuneLite Loot Tracker's `LootReceived` event for the curated boss sources in `BossRegistry`: **Maggot King**, **Vorkath**, **Zulrah**, **Corrupted Hunllef**, and **Crystalline Hunllef**. The user confirmed a `Maggot King` / `NPC` event with item IDs `33627` and `33628` in-game on November 8, 2026. Vorkath was confirmed in-game on November 10, 2026; Zulrah and both Gauntlet sources still need in-game checks.
 - Saves each supported loot callback's item IDs and quantities, UTC timestamp, event ID, client tick, RuneLite event metadata fields, and session ID. The sidebar shows a per-profile saved-event count. The boss selector keeps each boss's Overview and History separate.
 - Snapshots each item's name, RuneLite price, and available high-alchemy reference value when the event arrives. The panel shows both **direct GE sale** and **after-conversion GE** estimates. Explicitly untradeable items count as 0 direct GE GP. Conversion output prices, recipe weights, source links, and results are frozen in new event files. A missing output price or unsupported untradeable makes the after-conversion total unavailable rather than silently treating it as zero.
 - Records when the valuation was captured; RuneLite does not expose the underlying price-feed timestamp through this lookup, so that field remains unavailable.
@@ -76,8 +76,10 @@ The Take-eggs no-loot signal passes fixture tests but has not been checked in-ga
 
 The History tab was checked in-game under All time and showed saved Tarnished necklace, Tarnished halberd, and other earlier itemized events. The same screenshots revealed a large empty gap in Overview between the latest-event text and the reward summary. Overview now renders those sections in one scrollable text area. The user confirmed in-game that the reward summary appears directly below the latest-event text with the gap removed.
 
-1. Check ordinary Vorkath and Zulrah loot, plus a regular and corrupted Gauntlet chest, in the development client to verify source names, callback timing, item valuation, and selector behavior. No rare drop is needed. Verify that crystal shards appear in the captured callback and contribute 0 direct GE GP.
+Vorkath was checked in-game on November 10, 2026. RuneLite emitted `Vorkath` / `NPC`, and the plugin saved an earlier five-stack reward worth 251,179 direct GE GP without an expected snapshot. After the fixed baseline was added, a second five-stack reward saved with 85,905 direct GE GP and 144,404 expected GP. The panel showed two observed reward groups, one valued group, and −58,499 GP provisional difference in red; History retained both callbacks and showed the expected snapshot only on the newer record. The earlier record is not silently backfilled.
+
+1. Check ordinary Zulrah loot, plus a regular and corrupted Gauntlet chest, in the development client to verify source names, callback timing, item valuation, and selector behavior. No rare drop is needed. Verify that crystal shards appear in the captured callback and contribute 0 direct GE GP.
 2. Expand the boss allowlist after checking RuneLite's actual source names; add item-ID-based, versioned expected-value and conversion rules boss by boss.
 3. Add percentage luck and GP per observed reward, then boss rankings as more bosses have verified baselines.
 
-The plugin does not scrape the Wiki on every kill or use the Wiki's displayed live average directly. It recalculates from the versioned table and current RuneLite prices. Values in the context file are illustrative or unverified.
+The plugin does not scrape the Wiki on every kill. Maggot King's expected value is recalculated from its versioned drop table and current RuneLite prices; the four newer boss baselines are fixed sourced values. Values in the context file are illustrative or unverified.

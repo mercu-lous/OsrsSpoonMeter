@@ -239,9 +239,11 @@ public final class LootLuckPanel extends PluginPanel
 		}
 		if (stats.getNetLuckGp() != null)
 		{
-			text.append(boss == BossRegistry.MAGGOT_KING ? "\nConverted loot: " : "\nDirect GE loot: ")
+			text.append(boss == BossRegistry.MAGGOT_KING
+				? "\nValued converted loot: " : "\nValued direct GE loot: ")
 				.append(gp(stats.getConvertedGp()));
-			text.append(boss == BossRegistry.MAGGOT_KING ? "\nExpected: " : "\nFixed expected: ")
+			text.append(boss == BossRegistry.MAGGOT_KING
+				? "\nExpected for valued: " : "\nFixed expected for valued: ")
 				.append(gp(stats.getExpectedGp()));
 			text.append("\nProvisional GP vs expected: ").append(signedGp(stats.getNetLuckGp()));
 			text.append("\nLatest valued reward: ").append(stats.getLastRewardDeltaGp() == null
