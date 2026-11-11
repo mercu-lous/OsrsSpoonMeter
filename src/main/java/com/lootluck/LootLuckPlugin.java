@@ -507,7 +507,8 @@ public class LootLuckPlugin extends Plugin
 		});
 	}
 
-	private void addManualReward(BossDefinition boss, long actualGp, Long expectedGp, String note)
+	private void addManualReward(BossDefinition boss, long actualGp,
+		Long expectedGpPerKill, int killCountIncrease, String note)
 	{
 		String profileId = currentProfileId;
 		LootLuckPanel targetPanel = panel;
@@ -520,7 +521,8 @@ public class LootLuckPlugin extends Plugin
 			return;
 		}
 		ManualReward reward = new ManualReward(UUID.randomUUID().toString(), profileId,
-			boss.getId(), sessionId, Instant.now(), actualGp, expectedGp, note, true);
+			boss.getId(), sessionId, Instant.now(), actualGp, expectedGpPerKill,
+			killCountIncrease, note, true);
 		writeManualReward(profileId, reward, targetPanel, "Manual reward saved.");
 	}
 

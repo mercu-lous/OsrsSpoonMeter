@@ -131,7 +131,9 @@ public final class LootEventStore
 			|| !previous.getSessionId().equals(reward.getSessionId())
 			|| !previous.getRecordedAtUtc().equals(reward.getRecordedAtUtc())
 			|| previous.getActualGp() != reward.getActualGp()
-			|| !java.util.Objects.equals(previous.getExpectedGp(), reward.getExpectedGp())
+			|| !java.util.Objects.equals(previous.getExpectedGpPerKill(), reward.getExpectedGpPerKill())
+			|| previous.getKillCountIncrease() != reward.getKillCountIncrease()
+			|| previous.usesBossDefault() != reward.usesBossDefault()
 			|| !previous.getNote().equals(reward.getNote())))
 		{
 			throw new IllegalArgumentException("Saved manual reward can only be included or excluded");

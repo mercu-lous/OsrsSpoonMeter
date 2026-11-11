@@ -13,12 +13,40 @@ public final class ManualReward
 	private final String sessionId;
 	private final Instant recordedAtUtc;
 	private final long actualGp;
-	private final Long expectedGp;
+	private final Long expectedGpPerKill;
+	private final Long expectedGpTotal;
+	private final int killCountIncrease;
+	private final boolean usesBossDefault;
 	private final String note;
 	private final boolean included;
 
 	public ManualReward(String id, String profileId, String bossId, String sessionId,
 		Instant recordedAtUtc, long actualGp, Long expectedGp, String note, boolean included)
+	{
+		this(id, profileId, bossId, sessionId, recordedAtUtc, actualGp, expectedGp,
+			1, note, included);
+	}
+
+	public ManualReward(String id, String profileId, String bossId, String sessionId,
+		Instant recordedAtUtc, long actualGp, Long enteredExpectedGpPerKill,
+		int killCountIncrease, String note, boolean included)
+	{
+		this(id, profileId, bossId, sessionId, recordedAtUtc, actualGp,
+			enteredExpectedGpPerKill == null ? defaultExpectedGpPerKill(bossId) : enteredExpectedGpPerKill,
+			killCountIncrease, enteredExpectedGpPerKill == null, note, included);
+	}
+
+	public static ManualReward fromStored(String id, String profileId, String bossId, String sessionId,
+		Instant recordedAtUtc, long actualGp, Long expectedGpPerKill,
+		int killCountIncrease, boolean usesBossDefault, String note, boolean included)
+	{
+		return new ManualReward(id, profileId, bossId, sessionId, recordedAtUtc, actualGp,
+			expectedGpPerKill, killCountIncrease, usesBossDefault, note, included);
+	}
+
+	private ManualReward(String id, String profileId, String bossId, String sessionId,
+		Instant recordedAtUtc, long actualGp, Long expectedGpPerKill,
+		int killCountIncrease, boolean usesBossDefault, String note, boolean included)
 	{
 		UUID.fromString(id);
 		this.id = id;
@@ -28,18 +56,30 @@ public final class ManualReward
 			throw new IllegalArgumentException("Invalid profile ID");
 		}
 		this.bossId = Objects.requireNonNull(bossId);
-		if (BossRegistry.bosses().stream().noneMatch(boss -> boss.getId().equals(bossId)))
-		{
-			throw new IllegalArgumentException("Unknown boss ID");
-		}
+		findBoss(bossId);
 		this.sessionId = Objects.requireNonNull(sessionId);
 		this.recordedAtUtc = Objects.requireNonNull(recordedAtUtc);
-		if (actualGp < 0 || (expectedGp != null && expectedGp <= 0))
+		if (actualGp < 0 || (expectedGpPerKill != null && expectedGpPerKill <= 0))
 		{
-			throw new IllegalArgumentException("Actual GP cannot be negative; expected GP must be positive");
+			throw new IllegalArgumentException("Actual GP cannot be negative; expected GP per kill must be positive");
+		}
+		if (killCountIncrease < 1 || killCountIncrease > 1_000_000)
+		{
+			throw new IllegalArgumentException("Manual kill count must be between 1 and 1,000,000");
 		}
 		this.actualGp = actualGp;
-		this.expectedGp = expectedGp;
+		this.expectedGpPerKill = expectedGpPerKill;
+		this.killCountIncrease = killCountIncrease;
+		this.usesBossDefault = usesBossDefault;
+		try
+		{
+			this.expectedGpTotal = expectedGpPerKill == null ? null
+				: Math.multiplyExact(expectedGpPerKill, killCountIncrease);
+		}
+		catch (ArithmeticException overflow)
+		{
+			throw new IllegalArgumentException("Expected GP times kill count is too large", overflow);
+		}
 		this.note = Objects.requireNonNull(note).trim();
 		if (this.note.length() > 160)
 		{
@@ -50,8 +90,27 @@ public final class ManualReward
 
 	public ManualReward withIncluded(boolean newIncluded)
 	{
-		return new ManualReward(id, profileId, bossId, sessionId, recordedAtUtc,
-			actualGp, expectedGp, note, newIncluded);
+		return fromStored(id, profileId, bossId, sessionId, recordedAtUtc,
+			actualGp, expectedGpPerKill, killCountIncrease, usesBossDefault, note, newIncluded);
+	}
+
+	public static Long defaultExpectedGpPerKill(BossDefinition boss)
+	{
+		BossRules rules = boss.getRules();
+		return rules instanceof FixedExpectedBossRules
+			? ((FixedExpectedBossRules) rules).getExpectedGp() : null;
+	}
+
+	private static Long defaultExpectedGpPerKill(String bossId)
+	{
+		return defaultExpectedGpPerKill(findBoss(bossId));
+	}
+
+	private static BossDefinition findBoss(String bossId)
+	{
+		return BossRegistry.bosses().stream()
+			.filter(boss -> boss.getId().equals(bossId))
+			.findFirst().orElseThrow(() -> new IllegalArgumentException("Unknown boss ID"));
 	}
 
 	public String getId() { return id; }
@@ -60,7 +119,10 @@ public final class ManualReward
 	public String getSessionId() { return sessionId; }
 	public Instant getRecordedAtUtc() { return recordedAtUtc; }
 	public long getActualGp() { return actualGp; }
-	public Long getExpectedGp() { return expectedGp; }
+	public Long getExpectedGp() { return expectedGpTotal; }
+	public Long getExpectedGpPerKill() { return expectedGpPerKill; }
+	public int getKillCountIncrease() { return killCountIncrease; }
+	public boolean usesBossDefault() { return usesBossDefault; }
 	public String getNote() { return note; }
 	public boolean isIncluded() { return included; }
 }

@@ -70,7 +70,9 @@ public final class LootLuckPanel extends PluginPanel
 	private Consumer<RewardEdit> editHandler;
 	private final JTextField manualActualGp = new JTextField();
 	private final JTextField manualExpectedGp = new JTextField();
+	private final JTextField manualKillCount = new JTextField();
 	private final JTextField manualReason = new JTextField();
+	private final JLabel manualDefaultLabel = new JLabel();
 	private final JButton manualAdd = new JButton("Add manual reward");
 	private final JComboBox<ManualChoice> manualChoice = new JComboBox<>();
 	private final JTextArea manualPreview = new JTextArea(6, 16);
@@ -99,6 +101,7 @@ public final class LootLuckPanel extends PluginPanel
 		header.add(new JLabel("Loot Luck Tracker"));
 		bossSelector.addActionListener(event -> {
 			showSelectedBossSections();
+			updateManualDefault();
 			renderStatistics();
 			renderHistory();
 			renderEditChoices();
@@ -137,12 +140,14 @@ public final class LootLuckPanel extends PluginPanel
 		tabs.addTab("Manual", buildManualTab());
 		tabs.setToolTipTextAt(4, "Add a missed reward and manage manual entries");
 		add(tabs, BorderLayout.CENTER);
+		updateManualDefault();
 	}
 
 	@FunctionalInterface
 	public interface ManualRewardAddHandler
 	{
-		void add(BossDefinition boss, long actualGp, Long expectedGp, String note);
+		void add(BossDefinition boss, long actualGp,
+			Long expectedGpPerKill, int killCountIncrease, String note);
 	}
 
 	public void setManualRewardHandlers(ManualRewardAddHandler addHandler,
@@ -157,10 +162,13 @@ public final class LootLuckPanel extends PluginPanel
 		JPanel form = new JPanel();
 		form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
 		form.add(new JLabel("Missed reward for selected boss"));
-		form.add(new JLabel("Actual GP received"));
+		form.add(new JLabel("Actual GP received (blank = 0)"));
 		form.add(manualActualGp);
-		form.add(new JLabel("Expected GP (optional)"));
+		form.add(new JLabel("Expected GP/kill (blank = default)"));
 		form.add(manualExpectedGp);
+		form.add(manualDefaultLabel);
+		form.add(new JLabel("Kill count increase (blank = 1)"));
+		form.add(manualKillCount);
 		form.add(new JLabel("Reason (optional)"));
 		form.add(manualReason);
 		manualAdd.addActionListener(event -> addManualReward());
@@ -179,8 +187,9 @@ public final class LootLuckPanel extends PluginPanel
 		manualPreview.setLineWrap(true);
 		manualPreview.setWrapStyleWord(true);
 		manualPreview.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
-		manualPreview.setText("Manual GP is kept separate from captured loot. Add expected GP only when this reward should affect the GP comparison.");
+		manualPreview.setText("Manual kills use expected GP per kill × kill count. Captured loot counts stay separate.");
 		form.add(manualPreview);
+		updateManualDefault();
 		for (Component component : form.getComponents())
 		{
 			JComponent control = (JComponent) component;
@@ -191,6 +200,14 @@ public final class LootLuckPanel extends PluginPanel
 		JPanel tab = new JPanel(new BorderLayout());
 		tab.add(new JScrollPane(form), BorderLayout.CENTER);
 		return tab;
+	}
+
+	private void updateManualDefault()
+	{
+		Long expected = ManualReward.defaultExpectedGpPerKill(selectedBoss());
+		manualDefaultLabel.setText(expected == null
+			? "No default; enter expected GP"
+			: "Default: " + gp(expected) + "/kill");
 	}
 
 	private void addManualReward()
@@ -204,20 +221,19 @@ public final class LootLuckPanel extends PluginPanel
 		{
 			String actualText = manualActualGp.getText().trim().replace(",", "");
 			String expectedText = manualExpectedGp.getText().trim().replace(",", "");
-			if (actualText.isEmpty())
-			{
-				throw new IllegalArgumentException("Actual GP is required.");
-			}
-			long actual = Long.parseLong(actualText);
+			String killText = manualKillCount.getText().trim().replace(",", "");
+			long actual = actualText.isEmpty() ? 0L : Long.parseLong(actualText);
 			Long expected = expectedText.isEmpty() ? null : Long.parseLong(expectedText);
+			int kills = killText.isEmpty() ? 1 : Integer.parseInt(killText);
 			if (actual < 0 || (expected != null && expected <= 0)
+				|| kills < 1 || kills > 1_000_000
 				|| manualReason.getText().trim().length() > 160)
 			{
-				throw new IllegalArgumentException("Use nonnegative actual GP, positive expected GP, and a reason up to 160 characters.");
+				throw new IllegalArgumentException("Check GP, kills (1–1,000,000), and reason (≤160 chars).");
 			}
 			manualStatus.setText("Saving manual reward...");
 			manualAdd.setEnabled(false);
-			manualAddHandler.add(selectedBoss(), actual, expected, manualReason.getText());
+			manualAddHandler.add(selectedBoss(), actual, expected, kills, manualReason.getText());
 		}
 		catch (IllegalArgumentException invalid)
 		{
@@ -247,6 +263,7 @@ public final class LootLuckPanel extends PluginPanel
 			{
 				manualActualGp.setText("");
 				manualExpectedGp.setText("");
+				manualKillCount.setText("");
 				manualReason.setText("");
 			}
 		});
@@ -297,7 +314,12 @@ public final class LootLuckPanel extends PluginPanel
 		manualToggle.setText(reward.isIncluded() ? "Exclude selected" : "Restore selected");
 		manualPreview.setText("Recorded: " + TIME_FORMAT.withZone(selected.zone).format(reward.getRecordedAtUtc())
 			+ "\nActual: " + gp(reward.getActualGp())
-			+ "\nExpected: " + (reward.getExpectedGp() == null ? "Not compared" : gp(reward.getExpectedGp()))
+			+ "\nManual kills added: " + reward.getKillCountIncrease()
+			+ "\nExpected per kill: " + (reward.getExpectedGpPerKill() == null
+				? "Unavailable" : gp(reward.getExpectedGpPerKill())
+					+ (reward.usesBossDefault() ? " (boss default)" : " (entered)"))
+			+ "\nExpected total: " + (reward.getExpectedGp() == null
+				? "Not compared" : gp(reward.getExpectedGp()))
 			+ "\nStatus: " + (reward.isIncluded() ? "Included" : "Excluded")
 			+ (reward.getNote().isEmpty() ? "" : "\nReason: " + reward.getNote()));
 	}
@@ -318,6 +340,8 @@ public final class LootLuckPanel extends PluginPanel
 		{
 			return DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(zone)
 				.format(reward.getRecordedAtUtc()) + " " + gp(reward.getActualGp())
+				+ " / " + reward.getKillCountIncrease()
+				+ (reward.getKillCountIncrease() == 1 ? " kill" : " kills")
 				+ (reward.isIncluded() ? "" : " (excluded)");
 		}
 	}
@@ -618,6 +642,7 @@ public final class LootLuckPanel extends PluginPanel
 		if (stats.getManualRewardCount() > 0)
 		{
 			text.append("\nManual rewards included: ").append(stats.getManualRewardCount());
+			text.append("\nManual kills added: ").append(stats.getManualKillCount());
 			text.append("\nManual GP recorded: ").append(stats.getManualActualGp() == null
 				? "Unavailable" : gp(stats.getManualActualGp()));
 			text.append("\nManual rewards compared: ").append(stats.getManualComparableRewardCount());
@@ -774,7 +799,10 @@ public final class LootLuckPanel extends PluginPanel
 				text.append("Manual reward")
 					.append(reward.isIncluded() ? " (included)\n" : " (excluded)\n");
 				text.append("Actual: ").append(gp(reward.getActualGp())).append('\n');
-				text.append("Expected: ").append(reward.getExpectedGp() == null
+				text.append("Manual kills added: ").append(reward.getKillCountIncrease()).append('\n');
+				text.append("Expected per kill: ").append(reward.getExpectedGpPerKill() == null
+					? "Unavailable" : gp(reward.getExpectedGpPerKill())).append('\n');
+				text.append("Expected total: ").append(reward.getExpectedGp() == null
 					? "Not compared" : gp(reward.getExpectedGp())).append('\n');
 				if (!reward.getNote().isEmpty())
 				{
@@ -885,6 +913,11 @@ public final class LootLuckPanel extends PluginPanel
 				.append("  ").append(signedPercent(ranking.getPercentVsExpected())).append('\n');
 			text.append("   ").append(stats.getValuedNormalRewards())
 				.append(" comparable rewards\n");
+			if (stats.getManualKillCount() > 0)
+			{
+				text.append("   ").append(stats.getManualKillCount())
+					.append(" manual kills added\n");
+			}
 			text.append("   ").append(signedGp(stats.getNetLuckGp()))
 				.append(" vs expected\n");
 			text.append("   ").append(ranking.getBoss() == BossRegistry.MAGGOT_KING

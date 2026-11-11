@@ -21,6 +21,8 @@ public final class FixedExpectedBossRules implements BossRules
 		this.sourceUrl = java.util.Objects.requireNonNull(sourceUrl);
 	}
 
+	public long getExpectedGp() { return expectedGp; }
+
 	@Override
 	public String conversionVersion()
 	{

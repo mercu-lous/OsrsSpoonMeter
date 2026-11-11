@@ -22,7 +22,7 @@ public class ManualRewardEntriesTest
 	public void manualRewardsStaySeparateFromLootAndOnlyEnteredBaselinesAffectLuck()
 	{
 		ManualReward compared = reward("VORKATH", "older", DAY_END, 200, 100L, true);
-		ManualReward unvalued = reward("ZULRAH", "current", DAY_END.plusSeconds(7200), 50, null, true);
+		ManualReward unvalued = reward("MAGGOT_KING", "current", DAY_END.plusSeconds(7200), 50, null, true);
 		ManualReward excluded = reward("CORRUPTED_GAUNTLET", "current",
 			DAY_END.plusSeconds(7300), 500, 200L, false);
 		ManualRewards rewards = ManualRewards.empty().with(compared).with(unvalued).with(excluded);
@@ -45,11 +45,12 @@ public class ManualRewardEntriesTest
 		assertTrue(dashboard.get(BossRegistry.VORKATH).getHistory(RewardScope.ALL_TIME)
 			.get(0).isManualReward());
 
-		RewardStatistics zulrah = dashboard.get(BossRegistry.ZULRAH).get(RewardScope.TODAY);
-		assertEquals(1, zulrah.getManualRewardCount());
-		assertEquals(Long.valueOf(50), zulrah.getManualActualGp());
-		assertEquals(0, zulrah.getManualComparableRewardCount());
-		assertNull(zulrah.getNetLuckGp());
+		RewardStatistics maggot = dashboard.get(BossRegistry.MAGGOT_KING).get(RewardScope.TODAY);
+		assertEquals(1, maggot.getManualRewardCount());
+		assertEquals(1, maggot.getManualKillCount());
+		assertEquals(Long.valueOf(50), maggot.getManualActualGp());
+		assertEquals(0, maggot.getManualComparableRewardCount());
+		assertNull(maggot.getNetLuckGp());
 		assertEquals(1, dashboard.getRankings(RewardScope.ALL_TIME).size());
 		assertSame(BossRegistry.VORKATH, dashboard.getRankings(RewardScope.ALL_TIME).get(0).getBoss());
 		assertEquals(0, dashboard.get(BossRegistry.CORRUPTED_GAUNTLET)
@@ -65,6 +66,26 @@ public class ManualRewardEntriesTest
 		assertFalse(reward.isIncluded());
 		assertTrue(reward.withIncluded(true).isIncluded());
 		assertEquals(reward.getId(), reward.withIncluded(true).getId());
+	}
+
+	@Test
+	public void blankExpectedUsesBossDefaultAndMultipliesByManualKills()
+	{
+		ManualReward reward = new ManualReward(UUID.randomUUID().toString(), PROFILE,
+			BossRegistry.CORRUPTED_GAUNTLET.getId(), "current", DAY_END,
+			600000, null, 2, "Two missed wins", true);
+		assertTrue(reward.usesBossDefault());
+		assertEquals(2, reward.getKillCountIncrease());
+		assertEquals(Long.valueOf(550380), reward.getExpectedGpPerKill());
+		assertEquals(Long.valueOf(1100760), reward.getExpectedGp());
+		ProfileDashboard dashboard = ProfileDashboard.fromObservations(Collections.emptyList(),
+			Collections.emptyList(), RewardEdits.empty(), ManualRewards.empty().with(reward),
+			"current", DAY_END.plusSeconds(5), ZoneOffset.UTC);
+		RewardStatistics stats = dashboard.get(BossRegistry.CORRUPTED_GAUNTLET)
+			.get(RewardScope.ALL_TIME);
+		assertEquals(2, stats.getManualKillCount());
+		assertEquals(Long.valueOf(-500760), stats.getNetLuckGp());
+		assertEquals(1, stats.getManualComparableRewardCount());
 	}
 
 	private static ManualReward reward(String boss, String session, Instant time,
