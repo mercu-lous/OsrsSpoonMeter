@@ -194,8 +194,11 @@ public final class LootLuckPanel extends PluginPanel
 		{
 			JComponent control = (JComponent) component;
 			control.setAlignmentX(Component.LEFT_ALIGNMENT);
-			control.setMaximumSize(new Dimension(Integer.MAX_VALUE,
-				control.getPreferredSize().height + 4));
+			if (control != manualPreview)
+			{
+				control.setMaximumSize(new Dimension(Integer.MAX_VALUE,
+					control.getPreferredSize().height + 4));
+			}
 		}
 		JPanel tab = new JPanel(new BorderLayout());
 		tab.add(new JScrollPane(form), BorderLayout.CENTER);
