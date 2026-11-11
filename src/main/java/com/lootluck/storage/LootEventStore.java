@@ -11,6 +11,7 @@ import com.lootluck.model.RewardEdits;
 import com.lootluck.model.GauntletOutcome;
 import com.lootluck.model.ManualReward;
 import com.lootluck.model.ManualRewards;
+import com.lootluck.model.ImportedBaseline;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -20,6 +21,8 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import net.runelite.client.util.Filepath;
@@ -33,16 +36,18 @@ public final class LootEventStore
 	private final NoLootConfirmationCodec confirmationCodec;
 	private final RewardEditCodec editCodec;
 	private final ManualRewardCodec manualRewardCodec;
+	private final ImportedBaselineCodec baselineCodec;
 
 	public LootEventStore(Filepath pluginDirectory, LootEventCodec codec,
 		NoLootConfirmationCodec confirmationCodec, RewardEditCodec editCodec,
-		ManualRewardCodec manualRewardCodec)
+		ManualRewardCodec manualRewardCodec, ImportedBaselineCodec baselineCodec)
 	{
 		this.pluginDirectory = pluginDirectory;
 		this.codec = codec;
 		this.confirmationCodec = confirmationCodec;
 		this.editCodec = editCodec;
 		this.manualRewardCodec = manualRewardCodec;
+		this.baselineCodec = baselineCodec;
 	}
 
 	public boolean save(SavedLootEvent event) throws IOException
@@ -119,7 +124,47 @@ public final class LootEventStore
 		}
 		return ProfileDashboard.fromObservations(events, confirmations, readRewardEdits(profileId),
 			readManualRewards(profileId),
-			sessionId, Instant.now(), calendarZone);
+			readLatestBaselines(profileId), sessionId, Instant.now(), calendarZone);
+	}
+
+	public void saveImportedBaseline(ImportedBaseline baseline) throws IOException
+	{
+		String name = baseline.getImportedAtUtc().toEpochMilli() + "-"
+			+ java.util.UUID.randomUUID() + ".json";
+		if (!saveJson(baselineDirectory(baseline.getProfileId(), baseline.getBossId()),
+			name, baselineCodec.encode(baseline)))
+		{
+			throw new IOException("Imported baseline already exists");
+		}
+	}
+
+	public Map<String, ImportedBaseline> readLatestBaselines(String profileId) throws IOException
+	{
+		Map<String, ImportedBaseline> latest = new LinkedHashMap<>();
+		for (com.lootluck.model.BossDefinition boss : com.lootluck.model.BossRegistry.bosses())
+		{
+			for (Filepath file : jsonFiles(baselineDirectory(profileId, boss.getId())))
+			{
+				try
+				{
+					ImportedBaseline baseline = baselineCodec.decode(readJson(file));
+					if (!profileId.equals(baseline.getProfileId()) || !boss.getId().equals(baseline.getBossId()))
+					{
+						throw new IllegalArgumentException("Imported baseline profile or boss mismatch");
+					}
+					ImportedBaseline previous = latest.get(boss.getId());
+					if (previous == null || baseline.getImportedAtUtc().isAfter(previous.getImportedAtUtc()))
+					{
+						latest.put(boss.getId(), baseline);
+					}
+				}
+				catch (RuntimeException malformed)
+				{
+					throw new IOException("Could not read imported baseline", malformed);
+				}
+			}
+		}
+		return latest;
 	}
 
 	public void saveManualReward(ManualReward reward) throws IOException
@@ -336,6 +381,15 @@ public final class LootEventStore
 	private Filepath manualRewardFile(String profileId)
 	{
 		return profileDirectory(profileId).joinSegment("manual-rewards.json");
+	}
+
+	private Filepath baselineDirectory(String profileId, String bossId)
+	{
+		if (!bossId.matches("[A-Z_]+"))
+		{
+			throw new IllegalArgumentException("Invalid boss ID");
+		}
+		return profileDirectory(profileId).joinSegment("imported-baselines").joinSegment(bossId);
 	}
 
 	private Filepath profileDirectory(String profileId)

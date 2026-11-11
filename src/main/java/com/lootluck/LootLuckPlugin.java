@@ -14,6 +14,7 @@ import com.lootluck.model.NoLootConfirmation;
 import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.RewardEdit;
 import com.lootluck.model.ManualReward;
+import com.lootluck.model.ImportedBaseline;
 import com.lootluck.model.ProfileDashboard;
 import com.lootluck.model.SavedLootEvent;
 import com.lootluck.storage.LootEventCodec;
@@ -22,6 +23,8 @@ import com.lootluck.storage.NoLootConfirmationCodec;
 import com.lootluck.storage.RewardEditCodec;
 import com.lootluck.storage.ManualRewardCodec;
 import com.lootluck.storage.ProfileIds;
+import com.lootluck.storage.ImportedBaselineCodec;
+import com.lootluck.storage.LootTrackerImportReader;
 import com.lootluck.ui.LootLuckPanel;
 import java.awt.Color;
 import java.awt.Graphics2D;
@@ -32,6 +35,9 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.LinkedHashMap;
+import java.util.Comparator;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -47,6 +53,7 @@ import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuOptionClicked;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.RuneLiteConfig;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.RuneScapeProfileChanged;
@@ -82,6 +89,9 @@ public class LootLuckPlugin extends Plugin
 	private ConfigManager configManager;
 
 	@Inject
+	private ClientThread clientThread;
+
+	@Inject
 	private Gson gson;
 
 	@Inject
@@ -114,6 +124,7 @@ public class LootLuckPlugin extends Plugin
 		panel = new LootLuckPanel();
 		panel.setRewardEditHandler(this::saveManualRewardEdit);
 		panel.setManualRewardHandlers(this::addManualReward, this::setManualRewardIncluded);
+		panel.setImportHandlers(this::readLootTrackerImport, this::saveLootTrackerImport);
 		navigationButton = NavigationButton.builder()
 			.tooltip("Loot Luck Tracker")
 			.icon(createIcon())
@@ -526,6 +537,113 @@ public class LootLuckPlugin extends Plugin
 		writeManualReward(profileId, reward, targetPanel, "Manual reward saved.");
 	}
 
+	private void readLootTrackerImport(BossDefinition boss)
+	{
+		LootLuckPanel targetPanel = panel;
+		clientThread.invokeLater(() -> {
+			try
+			{
+				String profileKey = configManager.getRSProfileKey();
+				if (profileKey == null || !ProfileIds.fromRuneScapeProfileKey(profileKey).equals(currentProfileId))
+				{
+					targetPanel.showImportStatus("Log in to the profile you want to import.");
+					return;
+				}
+				List<String> records = new ArrayList<>();
+				for (String key : configManager.getRSProfileConfigurationKeys("loottracker", profileKey, "drops_"))
+				{
+					String source = key.startsWith("drops_NPC_") ? key.substring(10)
+						: key.startsWith("drops_EVENT_") ? key.substring(12) : "";
+					if (BossRegistry.findBySource(source) == boss)
+					{
+						records.add(configManager.getConfiguration("loottracker", profileKey, key));
+					}
+				}
+				LootTrackerImportReader.Snapshot snapshot = LootTrackerImportReader.read(gson, records, boss);
+				if (snapshot.getKills() < 1)
+				{
+					targetPanel.showImportStatus("No saved Loot Tracker kills for this boss.");
+					return;
+				}
+				boolean wikiPrices = runeLiteConfig.useWikiItemPrices();
+				Map<Integer, Long> unitGp = new LinkedHashMap<>();
+				long actualGp = 0;
+				for (Map.Entry<Integer, Long> entry : snapshot.getQuantities().entrySet())
+				{
+					int id = entry.getKey();
+					ItemComposition canonical = itemManager.getItemComposition(itemManager.canonicalize(id));
+					long price = itemManager.getItemPriceWithSource(id, wikiPrices);
+					Long direct = LootValuation.directUnitGp(id, price,
+						canonical != null && !canonical.isTradeable(),
+						canonical == null || canonical.isGeTradeable());
+					long unit = direct == null ? 0 : direct;
+					unitGp.put(id, unit);
+					actualGp = Math.addExact(actualGp, Math.multiplyExact(unit, entry.getValue()));
+				}
+				Long fixedExpected = ManualReward.defaultExpectedGpPerKill(boss);
+				ImportedBaseline candidate = new ImportedBaseline(currentProfileId, boss.getId(),
+					Instant.now(), snapshot.getKills(), actualGp, actualGp,
+					fixedExpected == null ? 1 : fixedExpected, snapshot.getQuantities(), unitGp);
+				StringBuilder details = new StringBuilder("\nItem price source: ")
+					.append(wikiPrices ? "RuneLite Wiki prices" : "RuneLite Jagex prices")
+					.append("\nTop imported items:\n");
+				if (GauntletOutcome.isGauntlet(boss))
+				{
+					details.append("Failed chest rewards may be in these item totals. "
+						+ "Set eligible kills to completed runs and adjust actual GP if needed.\n");
+				}
+				snapshot.getQuantities().entrySet().stream()
+					.sorted(Comparator.comparingLong((Map.Entry<Integer, Long> entry) ->
+						unitGp.get(entry.getKey()) * entry.getValue()).reversed())
+					.limit(12)
+					.forEach(entry -> {
+						ItemComposition composition = itemManager.getItemComposition(entry.getKey());
+						String name = composition == null ? "Item #" + entry.getKey() : composition.getName();
+						details.append(entry.getValue()).append(" x ").append(name)
+							.append(" (#").append(entry.getKey()).append(")\n");
+					});
+				targetPanel.showImportPreview(candidate, details.toString());
+			}
+			catch (Exception exception)
+			{
+				log.warn("Could not read Loot Tracker import", exception);
+				targetPanel.showImportStatus("Could not read Loot Tracker totals; check RuneLite log.");
+			}
+		});
+	}
+
+	private void saveLootTrackerImport(ImportedBaseline baseline)
+	{
+		String profileId = currentProfileId;
+		LootLuckPanel targetPanel = panel;
+		if (profileId == null || !profileId.equals(baseline.getProfileId()))
+		{
+			targetPanel.showImportStatus("Profile changed; read Loot Tracker again.");
+			return;
+		}
+		ZoneId summaryZone = calendarZone == null ? ZoneId.systemDefault() : calendarZone;
+		submitStorageTask(() -> {
+			try
+			{
+				getStorage().saveImportedBaseline(baseline);
+				ProfileDashboard statistics = readStatistics(profileId, summaryZone);
+				if (profileId.equals(currentProfileId))
+				{
+					targetPanel.showStatistics(statistics);
+					targetPanel.showImportStatus("Starting point saved.");
+				}
+			}
+			catch (Exception exception)
+			{
+				log.warn("Could not save Loot Tracker import", exception);
+				if (profileId.equals(currentProfileId))
+				{
+					targetPanel.showImportStatus("Import save failed; check RuneLite log.");
+				}
+			}
+		});
+	}
+
 	private void setManualRewardIncluded(String id, boolean included)
 	{
 		String profileId = currentProfileId;
@@ -615,7 +733,7 @@ public class LootLuckPlugin extends Plugin
 		{
 			storage = new LootEventStore(getPluginDirectory(), new LootEventCodec(gson),
 				new NoLootConfirmationCodec(gson), new RewardEditCodec(gson),
-				new ManualRewardCodec(gson));
+				new ManualRewardCodec(gson), new ImportedBaselineCodec(gson));
 		}
 		return storage;
 	}

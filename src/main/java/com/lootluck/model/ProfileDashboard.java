@@ -44,6 +44,15 @@ public final class ProfileDashboard
 		List<NoLootConfirmation> confirmations, RewardEdits edits, ManualRewards manualRewards,
 		String sessionId, Instant asOfUtc, ZoneId calendarZone)
 	{
+		return fromObservations(events, confirmations, edits, manualRewards,
+			Collections.emptyMap(), sessionId, asOfUtc, calendarZone);
+	}
+
+	public static ProfileDashboard fromObservations(List<SavedLootEvent> events,
+		List<NoLootConfirmation> confirmations, RewardEdits edits, ManualRewards manualRewards,
+		Map<String, ImportedBaseline> baselines,
+		String sessionId, Instant asOfUtc, ZoneId calendarZone)
+	{
 		Map<BossDefinition, List<SavedLootEvent>> byBoss = new LinkedHashMap<>();
 		Map<BossDefinition, List<ManualReward>> manualByBoss = new LinkedHashMap<>();
 		for (BossDefinition boss : BossRegistry.bosses())
@@ -75,7 +84,8 @@ public final class ProfileDashboard
 		{
 			summaries.put(boss, RewardSummary.fromObservations(byBoss.get(boss),
 				boss == BossRegistry.MAGGOT_KING ? confirmations : Collections.emptyList(),
-				edits, manualByBoss.get(boss), sessionId, asOfUtc, calendarZone));
+				edits, manualByBoss.get(boss), sessionId, asOfUtc, calendarZone,
+				baselines.get(boss.getId())));
 		}
 		return new ProfileDashboard(summaries);
 	}
@@ -92,7 +102,7 @@ public final class ProfileDashboard
 		for (Map.Entry<BossDefinition, RewardSummary> entry : summaries.entrySet())
 		{
 			RewardStatistics statistics = entry.getValue().get(scope);
-			if (statistics.getValuedNormalRewards() > 0 && statistics.getPercentVsExpected() != null)
+			if (statistics.getPercentVsExpected() != null)
 			{
 				rankings.add(new BossRankingEntry(entry.getKey(), statistics));
 			}

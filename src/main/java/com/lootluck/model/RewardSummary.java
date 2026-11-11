@@ -10,6 +10,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,12 +33,13 @@ public final class RewardSummary
 	private final RewardEdits edits;
 	private final List<ManualReward> manualRewards;
 	private final Map<String, String> groupIdByEventId;
+	private final ImportedBaseline baseline;
 
 	private RewardSummary(Map<RewardScope, RewardStatistics> scopes,
 		Map<RewardScope, Integer> confirmedNoLoot,
 		Map<RewardScope, List<RewardHistoryEntry>> history, ZoneId calendarZone,
 		List<SavedLootEvent> events, List<ManualReward> manualRewards,
-		String sessionId, Instant asOfUtc, RewardEdits edits)
+		String sessionId, Instant asOfUtc, RewardEdits edits, ImportedBaseline baseline)
 	{
 		this.scopes = Collections.unmodifiableMap(new EnumMap<>(scopes));
 		this.confirmedNoLoot = Collections.unmodifiableMap(new EnumMap<>(confirmedNoLoot));
@@ -48,6 +50,7 @@ public final class RewardSummary
 		this.sessionId = sessionId;
 		this.asOfUtc = asOfUtc;
 		this.edits = edits;
+		this.baseline = baseline;
 		Map<String, String> groups = new HashMap<>();
 		for (LootRewardGroup group : LootRewardGrouper.group(events))
 		{
@@ -85,6 +88,14 @@ public final class RewardSummary
 		List<NoLootConfirmation> confirmations, RewardEdits edits, List<ManualReward> manualRewards,
 		String sessionId, Instant asOfUtc, ZoneId calendarZone)
 	{
+		return fromObservations(events, confirmations, edits, manualRewards,
+			sessionId, asOfUtc, calendarZone, null);
+	}
+
+	public static RewardSummary fromObservations(List<SavedLootEvent> events,
+		List<NoLootConfirmation> confirmations, RewardEdits edits, List<ManualReward> manualRewards,
+		String sessionId, Instant asOfUtc, ZoneId calendarZone, ImportedBaseline baseline)
+	{
 		Objects.requireNonNull(events);
 		Objects.requireNonNull(confirmations);
 		Objects.requireNonNull(sessionId);
@@ -100,9 +111,24 @@ public final class RewardSummary
 			uniqueConfirmations.putIfAbsent(confirmation.getClick().getClickId(), confirmation);
 		}
 		Set<String> noLootClickIds = uniqueConfirmations.keySet();
+		Set<String> groupsCoveredByImport = new HashSet<>();
+		if (baseline != null)
+		{
+			for (LootRewardGroup group : LootRewardGrouper.group(events))
+			{
+				if (!group.getEvents().get(0).getObservedAtUtc().isAfter(baseline.getImportedAtUtc()))
+				{
+					groupsCoveredByImport.add(group.getLastEvent().getEventId());
+				}
+			}
+		}
 		EnumMap<RewardScope, RewardStatistics> results = new EnumMap<>(RewardScope.class);
 		results.put(RewardScope.ALL_TIME, RewardStatistics.summarize(events,
-			event -> true, noLootClickIds, edits, manualRewards, reward -> true));
+			event -> !groupsCoveredByImport.contains(event.getEventId())
+				&& (baseline == null || event.getObservedAtUtc().isAfter(baseline.getImportedAtUtc())),
+			noLootClickIds, edits, manualRewards,
+			reward -> baseline == null || reward.getRecordedAtUtc().isAfter(baseline.getImportedAtUtc()))
+			.withImportedBaseline(baseline));
 		results.put(RewardScope.CURRENT_RUN, RewardStatistics.summarize(events,
 			event -> sessionId.equals(event.getSessionId()), noLootClickIds, edits,
 			manualRewards, reward -> sessionId.equals(reward.getSessionId())));
@@ -129,7 +155,7 @@ public final class RewardSummary
 		EnumMap<RewardScope, List<RewardHistoryEntry>> histories = buildHistory(events, manualRewards,
 			uniqueConfirmations, sessionId, asOfUtc, calendarZone, today, weekStart);
 		return new RewardSummary(results, noLootCounts, histories, calendarZone,
-			events, manualRewards, sessionId, asOfUtc, edits);
+			events, manualRewards, sessionId, asOfUtc, edits, baseline);
 	}
 
 	private static EnumMap<RewardScope, List<RewardHistoryEntry>> buildHistory(
@@ -246,6 +272,7 @@ public final class RewardSummary
 	}
 
 	public RewardStatistics get(RewardScope scope) { return scopes.get(scope); }
+	public ImportedBaseline getImportedBaseline() { return baseline; }
 	public int getConfirmedNoLoot(RewardScope scope) { return confirmedNoLoot.get(scope); }
 	public List<RewardHistoryEntry> getHistory(RewardScope scope) { return history.get(scope); }
 	public ZoneId getCalendarZone() { return calendarZone; }

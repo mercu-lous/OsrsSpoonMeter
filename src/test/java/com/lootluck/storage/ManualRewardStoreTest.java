@@ -38,7 +38,7 @@ public class ManualRewardStoreTest
 		Gson gson = new Gson();
 		LootEventStore store = new LootEventStore(pluginDirectory, new LootEventCodec(gson),
 			new NoLootConfirmationCodec(gson), new RewardEditCodec(gson),
-			new ManualRewardCodec(gson));
+			new ManualRewardCodec(gson), new ImportedBaselineCodec(gson));
 		ManualReward reward = new ManualReward(UUID.randomUUID().toString(), PROFILE,
 			BossRegistry.VORKATH.getId(), "run", RECORDED, 200000, 144404L,
 			"Missed callback", true);

@@ -20,6 +20,7 @@ import com.lootluck.model.RewardScope;
 import com.lootluck.model.RewardStatistics;
 import com.lootluck.model.RewardSummary;
 import com.lootluck.model.SavedLootEvent;
+import com.lootluck.model.ImportedBaseline;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Component;
@@ -80,6 +81,17 @@ public final class LootLuckPanel extends PluginPanel
 	private final JButton manualToggle = new JButton("Exclude selected");
 	private ManualRewardAddHandler manualAddHandler;
 	private BiConsumer<String, Boolean> manualToggleHandler;
+	private final JButton importRead = new JButton("Read Loot Tracker totals");
+	private final JButton importSave = new JButton("Save starting point");
+	private final JTextField importKills = new JTextField();
+	private final JTextField importActualGp = new JTextField();
+	private final JTextField importExpectedGp = new JTextField();
+	private final JTextArea importPreview = new JTextArea(12, 16);
+	private final JLabel importStatus = new JLabel("Read this boss's Loot Tracker totals.");
+	private Consumer<BossDefinition> importReadHandler;
+	private Consumer<ImportedBaseline> importSaveHandler;
+	private ImportedBaseline pendingImport;
+	private String importedItemsText = "";
 	private final JComboBox<BossDefinition> bossSelector = new JComboBox<>(
 		BossRegistry.bosses().toArray(new BossDefinition[0]));
 	private final JComboBox<RewardScope> statisticsScope = new JComboBox<>(RewardScope.values());
@@ -100,6 +112,9 @@ public final class LootLuckPanel extends PluginPanel
 		JPanel header = new JPanel(new GridLayout(0, 1, 0, 4));
 		header.add(new JLabel("Loot Luck Tracker"));
 		bossSelector.addActionListener(event -> {
+			pendingImport = null;
+			importSave.setEnabled(false);
+			importStatus.setText("Read this boss's Loot Tracker totals.");
 			showSelectedBossSections();
 			updateManualDefault();
 			renderStatistics();
@@ -138,6 +153,7 @@ public final class LootLuckPanel extends PluginPanel
 		tabs.addTab("Rankings", new JScrollPane(rankingsText));
 		tabs.addTab("Edit", buildEditTab());
 		tabs.addTab("Manual", buildManualTab());
+		tabs.addTab("Import", buildImportTab());
 		tabs.setToolTipTextAt(4, "Add a missed reward and manage manual entries");
 		add(tabs, BorderLayout.CENTER);
 		updateManualDefault();
@@ -155,6 +171,174 @@ public final class LootLuckPanel extends PluginPanel
 	{
 		this.manualAddHandler = addHandler;
 		this.manualToggleHandler = toggleHandler;
+	}
+
+	public void setImportHandlers(Consumer<BossDefinition> readHandler,
+		Consumer<ImportedBaseline> saveHandler)
+	{
+		this.importReadHandler = readHandler;
+		this.importSaveHandler = saveHandler;
+	}
+
+	private JPanel buildImportTab()
+	{
+		JPanel form = new JPanel();
+		form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
+		form.add(new JLabel("Import selected boss's totals"));
+		importRead.addActionListener(event -> {
+			if (importReadHandler != null)
+			{
+				pendingImport = null;
+				importSave.setEnabled(false);
+				importStatus.setText("Reading Loot Tracker...");
+				importReadHandler.accept(selectedBoss());
+			}
+		});
+		form.add(importRead);
+		form.add(new JLabel("Eligible kills (adjust failed runs)"));
+		form.add(importKills);
+		form.add(new JLabel("Actual GP (edit to match Loot Tracker)"));
+		form.add(importActualGp);
+		form.add(new JLabel("Expected GP per kill"));
+		form.add(importExpectedGp);
+		importPreview.setEditable(false);
+		importPreview.setLineWrap(true);
+		importPreview.setWrapStyleWord(true);
+		importPreview.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+		importPreview.setText("Read the active RuneScape profile before saving a starting point.");
+		form.add(importPreview);
+		importSave.setEnabled(false);
+		importSave.addActionListener(event -> saveImport());
+		form.add(importSave);
+		form.add(importStatus);
+		for (Component component : form.getComponents())
+		{
+			JComponent control = (JComponent) component;
+			control.setAlignmentX(Component.LEFT_ALIGNMENT);
+			if (control != importPreview)
+			{
+				control.setMaximumSize(new Dimension(Integer.MAX_VALUE,
+					control.getPreferredSize().height + 4));
+			}
+		}
+		javax.swing.event.DocumentListener refresh = new javax.swing.event.DocumentListener()
+		{
+			public void insertUpdate(javax.swing.event.DocumentEvent e) { renderImportPreview(); }
+			public void removeUpdate(javax.swing.event.DocumentEvent e) { renderImportPreview(); }
+			public void changedUpdate(javax.swing.event.DocumentEvent e) { renderImportPreview(); }
+		};
+		importActualGp.getDocument().addDocumentListener(refresh);
+		importKills.getDocument().addDocumentListener(refresh);
+		importExpectedGp.getDocument().addDocumentListener(refresh);
+		JPanel tab = new JPanel(new BorderLayout());
+		tab.add(new JScrollPane(form), BorderLayout.CENTER);
+		return tab;
+	}
+
+	private void saveImport()
+	{
+		if (pendingImport == null || importSaveHandler == null)
+		{
+			return;
+		}
+		try
+		{
+			int kills = Integer.parseInt(importKills.getText().trim().replace(",", ""));
+			long actual = Long.parseLong(importActualGp.getText().trim().replace(",", ""));
+			long expected = Long.parseLong(importExpectedGp.getText().trim().replace(",", ""));
+			ImportedBaseline saving = pendingImport.withValues(kills, actual, expected);
+			importSave.setEnabled(false);
+			importStatus.setText("Saving starting point...");
+			importSaveHandler.accept(saving);
+		}
+		catch (RuntimeException invalid)
+		{
+			importStatus.setText("Enter eligible kills (0 to tracked count), actual GP ≥ 0, and expected GP/kill > 0.");
+		}
+	}
+
+	public void showImportPreview(ImportedBaseline candidate, String itemDetails)
+	{
+		SwingUtilities.invokeLater(() -> {
+			if (!selectedBoss().getId().equals(candidate.getBossId()))
+			{
+				return;
+			}
+			pendingImport = candidate;
+			importedItemsText = itemDetails;
+		importKills.setText(Integer.toString(candidate.getKills()));
+			importActualGp.setText(Long.toString(candidate.getActualGp()));
+			importExpectedGp.setText(candidate.getExpectedGpPerKill() == 1
+				? "" : Long.toString(candidate.getExpectedGpPerKill()));
+			importSave.setEnabled(true);
+			importStatus.setText("Review totals before saving.");
+			renderImportPreview();
+		});
+	}
+
+	public void showImportStatus(String status)
+	{
+		SwingUtilities.invokeLater(() -> {
+			importStatus.setText(status);
+			if (!"Starting point saved.".equals(status))
+			{
+				importSave.setEnabled(pendingImport != null);
+			}
+		});
+	}
+
+	private void renderImportPreview()
+	{
+		if (pendingImport == null)
+		{
+			return;
+		}
+		StringBuilder text = new StringBuilder();
+		text.append("Loot Tracker count: ").append(pendingImport.getLootTrackerCount())
+			.append("\nItem types: ").append(pendingImport.getItemQuantities().size())
+			.append("\nCalculated direct GE item GP: ").append(gp(pendingImport.getCalculatedItemGp()));
+		try
+		{
+			long actual = Long.parseLong(importActualGp.getText().trim().replace(",", ""));
+			text.append("\nSelected actual GP: ").append(gp(actual))
+				.append("\nActual minus priced items: ")
+				.append(signedGp(Math.subtractExact(actual, pendingImport.getCalculatedItemGp())));
+		}
+		catch (RuntimeException invalid)
+		{
+			text.append("\nEnter a nonnegative actual GP total.");
+		}
+		try
+		{
+			int kills = Integer.parseInt(importKills.getText().trim().replace(",", ""));
+			long actual = Long.parseLong(importActualGp.getText().trim().replace(",", ""));
+			long expected = Long.parseLong(importExpectedGp.getText().trim().replace(",", ""));
+			if (kills < 0 || kills > pendingImport.getLootTrackerCount() || expected < 1)
+			{
+				throw new IllegalArgumentException("Invalid eligible kills or expected GP");
+			}
+			long expectedTotal = Math.multiplyExact(expected, kills);
+			long delta = Math.subtractExact(actual, expectedTotal);
+			text.append("\nEligible kills: ").append(kills)
+				.append("\nExpected total: ").append(gp(expectedTotal))
+				.append("\nGP vs expected: ").append(signedGp(delta));
+		}
+		catch (RuntimeException invalid)
+		{
+			text.append("\nEnter eligible kills and expected GP/kill to compare.");
+		}
+		if (dashboard != null)
+		{
+			RewardSummary summary = dashboard.get(selectedBoss());
+			text.append("\nEarlier captured groups: ")
+				.append(summary.getEditableGroups(RewardScope.ALL_TIME).size())
+				.append("\nEarlier manual entries: ")
+				.append(summary.getManualRewards(RewardScope.ALL_TIME).size());
+		}
+		text.append("\nEarlier entries stay in History. The imported total replaces them in All time GP. Item prices are frozen at import; unknown or untradeable items count as 0 direct GE GP.\n")
+			.append(importedItemsText);
+		importPreview.setText(text.toString());
+		importPreview.revalidate();
 	}
 
 	private JPanel buildManualTab()
@@ -502,6 +686,9 @@ public final class LootLuckPanel extends PluginPanel
 	public void clearObservation()
 	{
 		SwingUtilities.invokeLater(() -> {
+			pendingImport = null;
+			importSave.setEnabled(false);
+			importStatus.setText("Read this boss's Loot Tracker totals.");
 			latestEvents.clear();
 			latestLinks.clear();
 			showSelectedBossSections();
@@ -641,6 +828,16 @@ public final class LootLuckPanel extends PluginPanel
 		totalDeltaGp = stats.getNetLuckGp();
 		latestDeltaGp = stats.getLastRewardDeltaGp();
 		StringBuilder text = new StringBuilder();
+		if (scope == RewardScope.ALL_TIME && rewardSummary.getImportedBaseline() != null)
+		{
+			ImportedBaseline baseline = rewardSummary.getImportedBaseline();
+			text.append("\nImported Loot Tracker count: ").append(baseline.getLootTrackerCount());
+			text.append("\nImported eligible kills: ").append(baseline.getKills());
+			text.append("\nImported item types: ").append(baseline.getItemQuantities().size());
+			text.append("\nImported actual GP: ").append(gp(baseline.getActualGp()));
+			text.append("\nImported expected GP: ").append(gp(baseline.getExpectedGp()));
+			text.append("\nEarlier saved events remain in History; All time totals start at this import.\n");
+		}
 		text.append("\nObserved loot reward groups: ").append(stats.getObservedLootRewards());
 		if (stats.getManualRewardCount() > 0)
 		{
@@ -915,7 +1112,13 @@ public final class LootLuckPanel extends PluginPanel
 			text.append(i + 1).append(". ").append(ranking.getBoss().getName())
 				.append("  ").append(signedPercent(ranking.getPercentVsExpected())).append('\n');
 			text.append("   ").append(stats.getValuedNormalRewards())
-				.append(" comparable rewards\n");
+				.append(stats.getImportedKills() > 0
+					? " comparable rewards after import\n" : " comparable rewards\n");
+			if (stats.getImportedKills() > 0)
+			{
+				text.append("   ").append(stats.getImportedKills())
+					.append(" eligible imported kills\n");
+			}
 			if (stats.getManualKillCount() > 0)
 			{
 				text.append("   ").append(stats.getManualKillCount())
@@ -931,7 +1134,7 @@ public final class LootLuckPanel extends PluginPanel
 			}
 			text.append("\n\n");
 		}
-		text.append("Ranked by GP percentage for rewards with saved expected values. "
+		text.append("Ranked by GP percentage for imported totals and rewards with expected values. "
 			+ "Small samples can swing widely. This is not a rare-drop percentile or confirmed kill ranking.");
 		rankingsText.setText(text.toString());
 		rankingsText.setCaretPosition(0);

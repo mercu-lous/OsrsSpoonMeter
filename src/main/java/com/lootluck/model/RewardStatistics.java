@@ -29,6 +29,8 @@ public final class RewardStatistics
 	private final long expectedGp;
 	private final Long netLuckGp;
 	private final Long lastRewardDeltaGp;
+	private final int importedKills;
+	private final long importedActualGp;
 
 	private RewardStatistics(int observedNormalRewards, int observedEggRewards,
 		int excludedRewards, int correctedRewards, Long appliedCorrectionGp,
@@ -58,6 +60,37 @@ public final class RewardStatistics
 		this.expectedGp = expectedGp;
 		this.netLuckGp = netLuckGp;
 		this.lastRewardDeltaGp = lastRewardDeltaGp;
+		this.importedKills = 0;
+		this.importedActualGp = 0;
+	}
+
+	private RewardStatistics(RewardStatistics recent, ImportedBaseline baseline)
+	{
+		this.observedNormalRewards = recent.observedNormalRewards;
+		this.observedEggRewards = recent.observedEggRewards;
+		this.excludedRewards = recent.excludedRewards;
+		this.correctedRewards = recent.correctedRewards;
+		this.appliedCorrectionGp = recent.appliedCorrectionGp;
+		this.partialGauntletRewards = recent.partialGauntletRewards;
+		this.unclassifiedGauntletRewards = recent.unclassifiedGauntletRewards;
+		this.pricedNormalRewards = recent.pricedNormalRewards;
+		this.observedConvertedGp = recent.observedConvertedGp;
+		this.manualRewardCount = recent.manualRewardCount;
+		this.manualKillCount = recent.manualKillCount;
+		this.manualComparableRewardCount = recent.manualComparableRewardCount;
+		this.manualActualGp = recent.manualActualGp;
+		this.valuedNormalRewards = recent.valuedNormalRewards;
+		this.convertedGp = Math.addExact(recent.convertedGp, baseline.getActualGp());
+		this.expectedGp = Math.addExact(recent.expectedGp, baseline.getExpectedGp());
+		this.netLuckGp = Math.subtractExact(convertedGp, expectedGp);
+		this.lastRewardDeltaGp = recent.lastRewardDeltaGp;
+		this.importedKills = baseline.getKills();
+		this.importedActualGp = baseline.getActualGp();
+	}
+
+	public RewardStatistics withImportedBaseline(ImportedBaseline baseline)
+	{
+		return baseline == null ? this : new RewardStatistics(this, baseline);
 	}
 
 	public static RewardStatistics summarize(List<SavedLootEvent> events)
@@ -329,6 +362,8 @@ public final class RewardStatistics
 	public int getPricedNormalRewards() { return pricedNormalRewards; }
 	public Long getObservedConvertedGp() { return observedConvertedGp; }
 	public int getManualRewardCount() { return manualRewardCount; }
+	public int getImportedKills() { return importedKills; }
+	public long getImportedActualGp() { return importedActualGp; }
 	public long getManualKillCount() { return manualKillCount; }
 	public int getManualComparableRewardCount() { return manualComparableRewardCount; }
 	public Long getManualActualGp() { return manualActualGp; }
