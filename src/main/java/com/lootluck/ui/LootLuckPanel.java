@@ -6,6 +6,7 @@ import com.lootluck.model.BossRegistry;
 import com.lootluck.model.BossRankingEntry;
 import com.lootluck.model.ProfileDashboard;
 import com.lootluck.model.LootItemPreview;
+import com.lootluck.model.LootRewardGroup;
 import com.lootluck.model.LootValuation;
 import com.lootluck.model.ConversionQuote;
 import com.lootluck.model.ExpectedValueSnapshot;
@@ -13,6 +14,7 @@ import com.lootluck.model.FixedExpectedBossRules;
 import com.lootluck.model.GauntletOutcome;
 import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.RewardHistoryEntry;
+import com.lootluck.model.RewardEdit;
 import com.lootluck.model.RewardScope;
 import com.lootluck.model.RewardStatistics;
 import com.lootluck.model.RewardSummary;
@@ -23,10 +25,14 @@ import java.awt.Font;
 import java.awt.GridLayout;
 import java.math.BigDecimal;
 import java.time.ZoneId;
+import java.time.Instant;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.Consumer;
+import javax.swing.JButton;
+import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
@@ -34,6 +40,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextPane;
+import javax.swing.JTextField;
 import javax.swing.SwingUtilities;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.StyleConstants;
@@ -48,6 +55,13 @@ public final class LootLuckPanel extends PluginPanel
 	private final JTextPane overviewText = new JTextPane();
 	private final JTextArea historyText = new JTextArea();
 	private final JTextArea rankingsText = new JTextArea();
+	private final JTextArea editPreview = new JTextArea();
+	private final JComboBox<RewardChoice> rewardChoice = new JComboBox<>();
+	private final JCheckBox excludeReward = new JCheckBox("Exclude this reward");
+	private final JTextField gpCorrection = new JTextField("0");
+	private final JTextField editReason = new JTextField();
+	private final JLabel editStatus = new JLabel("Select a saved reward.");
+	private Consumer<RewardEdit> editHandler;
 	private final JComboBox<BossDefinition> bossSelector = new JComboBox<>(
 		BossRegistry.bosses().toArray(new BossDefinition[0]));
 	private final JComboBox<RewardScope> statisticsScope = new JComboBox<>(RewardScope.values());
@@ -71,12 +85,14 @@ public final class LootLuckPanel extends PluginPanel
 			showSelectedBossSections();
 			renderStatistics();
 			renderHistory();
+			renderEditChoices();
 		});
 		header.add(bossSelector);
 		statisticsScope.addActionListener(event -> {
 			renderStatistics();
 			renderHistory();
 			renderRankings();
+			renderEditChoices();
 		});
 		header.add(statisticsScope);
 		add(header, BorderLayout.NORTH);
@@ -99,7 +115,158 @@ public final class LootLuckPanel extends PluginPanel
 		tabs.addTab("Overview", new JScrollPane(overviewText));
 		tabs.addTab("History", new JScrollPane(historyText));
 		tabs.addTab("Rankings", new JScrollPane(rankingsText));
+		tabs.addTab("Edit", buildEditTab());
 		add(tabs, BorderLayout.CENTER);
+	}
+
+	private JPanel buildEditTab()
+	{
+		JPanel tab = new JPanel(new BorderLayout(0, 8));
+		JPanel controls = new JPanel(new GridLayout(0, 1, 0, 4));
+		controls.add(new JLabel("Saved reward"));
+		rewardChoice.addActionListener(event -> loadSelectedEdit());
+		controls.add(rewardChoice);
+		controls.add(excludeReward);
+		controls.add(new JLabel("GP correction (+ / -)"));
+		controls.add(gpCorrection);
+		controls.add(new JLabel("Reason (optional)"));
+		controls.add(editReason);
+		JButton save = new JButton("Save reward changes");
+		save.addActionListener(event -> saveSelectedEdit());
+		controls.add(save);
+		controls.add(editStatus);
+		tab.add(controls, BorderLayout.NORTH);
+		editPreview.setEditable(false);
+		editPreview.setLineWrap(true);
+		editPreview.setWrapStyleWord(true);
+		editPreview.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+		editPreview.setText("Choose a saved reward. A positive correction adds GP; a negative one removes GP. Expected GP stays the same.");
+		tab.add(new JScrollPane(editPreview), BorderLayout.CENTER);
+		return tab;
+	}
+
+	public void setRewardEditHandler(Consumer<RewardEdit> handler)
+	{
+		this.editHandler = handler;
+	}
+
+	private void saveSelectedEdit()
+	{
+		RewardChoice selected = (RewardChoice) rewardChoice.getSelectedItem();
+		if (selected == null || editHandler == null)
+		{
+			editStatus.setText("No saved reward selected.");
+			return;
+		}
+		try
+		{
+			String entered = gpCorrection.getText().trim().replace(",", "");
+			long correction = entered.isEmpty() ? 0 : Long.parseLong(entered);
+			RewardEdit edit = new RewardEdit(selected.group.getGroupId(),
+				excludeReward.isSelected(), correction, editReason.getText(), Instant.now());
+			editStatus.setText("Saving changes...");
+			editHandler.accept(edit);
+		}
+		catch (IllegalArgumentException invalid)
+		{
+			editStatus.setText("Check the GP amount or reason.");
+		}
+	}
+
+	public void showRewardEditStatus(String status)
+	{
+		SwingUtilities.invokeLater(() -> editStatus.setText(status));
+	}
+
+	private void renderEditChoices()
+	{
+		RewardChoice previous = (RewardChoice) rewardChoice.getSelectedItem();
+		String previousId = previous == null ? null : previous.group.getGroupId();
+		rewardChoice.removeAllItems();
+		if (dashboard != null)
+		{
+			RewardScope scope = (RewardScope) statisticsScope.getSelectedItem();
+			if (scope == null)
+			{
+				scope = RewardScope.ALL_TIME;
+			}
+			RewardSummary summary = dashboard.get(selectedBoss());
+			for (LootRewardGroup group : summary.getEditableGroups(scope))
+			{
+				rewardChoice.addItem(new RewardChoice(group, summary.getCalendarZone()));
+			}
+		}
+		if (previousId != null)
+		{
+			for (int index = 0; index < rewardChoice.getItemCount(); index++)
+			{
+				if (previousId.equals(rewardChoice.getItemAt(index).group.getGroupId()))
+				{
+					rewardChoice.setSelectedIndex(index);
+					break;
+				}
+			}
+		}
+		rewardChoice.setEnabled(rewardChoice.getItemCount() > 0);
+		loadSelectedEdit();
+	}
+
+	private void loadSelectedEdit()
+	{
+		RewardChoice selected = (RewardChoice) rewardChoice.getSelectedItem();
+		if (selected == null || dashboard == null)
+		{
+			editPreview.setText("No saved rewards in this view.");
+			excludeReward.setSelected(false);
+			gpCorrection.setText("0");
+			editReason.setText("");
+			return;
+		}
+		RewardEdit edit = dashboard.get(selectedBoss()).getEdit(selected.group.getGroupId());
+		excludeReward.setSelected(edit != null && edit.isExcluded());
+		gpCorrection.setText(edit == null ? "0" : Long.toString(edit.getGpCorrection()));
+		editReason.setText(edit == null ? "" : edit.getNote());
+		StringBuilder text = new StringBuilder();
+		text.append(TIME_FORMAT.withZone(selected.zone).format(selected.group.getObservedAtUtc()))
+			.append("\nGroup: ").append(selected.group.getGroupId(), 0, 8).append('\n');
+		for (SavedLootEvent event : selected.group.getEvents())
+		{
+			for (LootItemPreview item : event.getItems())
+			{
+				text.append(item.getQuantity()).append(" × ").append(item.getName()).append('\n');
+			}
+		}
+		Long captured = selected.group.getConvertedGp();
+		text.append("Captured GP: ").append(captured == null ? "Unavailable" : gp(captured));
+		if (edit != null && edit.getGpCorrection() != 0 && captured != null)
+		{
+			text.append("\nAdjusted GP: ").append(gp(captured + edit.getGpCorrection()));
+		}
+		text.append("\n\nA positive correction adds GP; a negative one removes GP. ")
+			.append("Expected GP stays the same. Excluded rewards leave totals and rankings; uncheck to restore.");
+		editPreview.setText(text.toString());
+		editPreview.setCaretPosition(0);
+	}
+
+	private static final class RewardChoice
+	{
+		private final LootRewardGroup group;
+		private final ZoneId zone;
+
+		private RewardChoice(LootRewardGroup group, ZoneId zone)
+		{
+			this.group = group;
+			this.zone = zone;
+		}
+
+		@Override
+		public String toString()
+		{
+			String item = group.getEvents().get(0).getItems().isEmpty() ? "No items"
+				: group.getEvents().get(0).getItems().get(0).getName();
+			return DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(zone)
+				.format(group.getObservedAtUtc()) + " " + item;
+		}
 	}
 
 	public void clearObservation()
@@ -113,6 +280,7 @@ public final class LootLuckPanel extends PluginPanel
 			renderStatistics();
 			renderHistory();
 			renderRankings();
+			renderEditChoices();
 		});
 	}
 
@@ -202,6 +370,7 @@ public final class LootLuckPanel extends PluginPanel
 			renderStatistics();
 			renderHistory();
 			renderRankings();
+			renderEditChoices();
 		});
 	}
 
@@ -213,6 +382,7 @@ public final class LootLuckPanel extends PluginPanel
 			renderStatistics();
 			renderHistory();
 			renderRankings();
+			renderEditChoices();
 		});
 	}
 
@@ -238,6 +408,16 @@ public final class LootLuckPanel extends PluginPanel
 		latestDeltaGp = stats.getLastRewardDeltaGp();
 		StringBuilder text = new StringBuilder();
 		text.append("\nObserved loot reward groups: ").append(stats.getObservedLootRewards());
+		if (stats.getExcludedRewards() > 0)
+		{
+			text.append("\nExcluded reward groups: ").append(stats.getExcludedRewards());
+		}
+		if (stats.getCorrectedRewards() > 0)
+		{
+			text.append("\nManual GP correction applied: ")
+				.append(stats.getAppliedCorrectionGp() == null
+					? "Unavailable" : signedGp(stats.getAppliedCorrectionGp()));
+		}
 		if (GauntletOutcome.isGauntlet(boss))
 		{
 			text.append("\nPartial-completion chests: ").append(stats.getPartialGauntletRewards());
@@ -379,6 +559,23 @@ public final class LootLuckPanel extends PluginPanel
 			else
 			{
 				SavedLootEvent event = entry.getLootEvent();
+				RewardEdit edit = rewardSummary.getEditForEvent(event.getEventId());
+				if (edit != null)
+				{
+					if (edit.isExcluded())
+					{
+						text.append("Excluded from totals and rankings\n");
+					}
+					if (edit.getGpCorrection() != 0)
+					{
+						text.append("Group GP correction: ")
+							.append(signedGp(edit.getGpCorrection())).append('\n');
+					}
+					if (!edit.getNote().isEmpty())
+					{
+						text.append("Reason: ").append(edit.getNote()).append('\n');
+					}
+				}
 				if (GauntletOutcome.isGauntlet(selectedBoss()))
 				{
 					text.append(gauntletOutcomeLabel(event.getGauntletOutcome())).append('\n');

@@ -28,6 +28,14 @@ public final class ProfileDashboard
 	public static ProfileDashboard fromObservations(List<SavedLootEvent> events,
 		List<NoLootConfirmation> confirmations, String sessionId, Instant asOfUtc, ZoneId calendarZone)
 	{
+		return fromObservations(events, confirmations, RewardEdits.empty(),
+			sessionId, asOfUtc, calendarZone);
+	}
+
+	public static ProfileDashboard fromObservations(List<SavedLootEvent> events,
+		List<NoLootConfirmation> confirmations, RewardEdits edits,
+		String sessionId, Instant asOfUtc, ZoneId calendarZone)
+	{
 		Map<BossDefinition, List<SavedLootEvent>> byBoss = new LinkedHashMap<>();
 		for (BossDefinition boss : BossRegistry.bosses())
 		{
@@ -46,7 +54,7 @@ public final class ProfileDashboard
 		{
 			summaries.put(boss, RewardSummary.fromObservations(byBoss.get(boss),
 				boss == BossRegistry.MAGGOT_KING ? confirmations : Collections.emptyList(),
-				sessionId, asOfUtc, calendarZone));
+				edits, sessionId, asOfUtc, calendarZone));
 		}
 		return new ProfileDashboard(summaries);
 	}

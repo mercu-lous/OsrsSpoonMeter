@@ -11,11 +11,13 @@ import com.lootluck.model.GauntletCompletionTracker;
 import com.lootluck.model.GauntletOutcome;
 import com.lootluck.model.NoLootConfirmation;
 import com.lootluck.model.RewardClickCandidate;
+import com.lootluck.model.RewardEdit;
 import com.lootluck.model.ProfileDashboard;
 import com.lootluck.model.SavedLootEvent;
 import com.lootluck.storage.LootEventCodec;
 import com.lootluck.storage.LootEventStore;
 import com.lootluck.storage.NoLootConfirmationCodec;
+import com.lootluck.storage.RewardEditCodec;
 import com.lootluck.storage.ProfileIds;
 import com.lootluck.ui.LootLuckPanel;
 import java.awt.Color;
@@ -93,7 +95,7 @@ public class LootLuckPlugin extends Plugin
 	private RewardClickCandidate recentRewardClick; // RuneLite client thread only.
 	private int lastNoLootMessageTick = -1; // RuneLite client thread only.
 	private final GauntletCompletionTracker gauntletCompletions = new GauntletCompletionTracker();
-	private ZoneId calendarZone; // RuneLite client thread only.
+	private volatile ZoneId calendarZone; // Also read by the Edit tab on Swing's event thread.
 	private LocalDate calendarDate; // RuneLite client thread only.
 
 	@Override
@@ -106,6 +108,7 @@ public class LootLuckPlugin extends Plugin
 			return thread;
 		});
 		panel = new LootLuckPanel();
+		panel.setRewardEditHandler(this::saveManualRewardEdit);
 		navigationButton = NavigationButton.builder()
 			.tooltip("Loot Luck Tracker")
 			.icon(createIcon())
@@ -442,12 +445,62 @@ public class LootLuckPlugin extends Plugin
 		}
 	}
 
+	private void saveManualRewardEdit(RewardEdit edit)
+	{
+		String profileId = currentProfileId;
+		LootLuckPanel targetPanel = panel;
+		if (profileId == null || targetPanel == null)
+		{
+			if (targetPanel != null)
+			{
+				targetPanel.showRewardEditStatus("Log in to save reward changes.");
+			}
+			return;
+		}
+		ZoneId summaryZone = calendarZone == null ? ZoneId.systemDefault() : calendarZone;
+		submitStorageTask(() -> {
+			try
+			{
+				getStorage().saveRewardEdit(profileId, edit);
+				ProfileDashboard statistics = readStatistics(profileId, summaryZone);
+				if (profileId.equals(currentProfileId))
+				{
+					if (statistics == null)
+					{
+						targetPanel.showStatisticsUnavailable();
+						targetPanel.showRewardEditStatus("Saved; summary could not reload.");
+					}
+					else
+					{
+						targetPanel.showStatistics(statistics);
+						targetPanel.showRewardEditStatus("Reward changes saved.");
+					}
+				}
+			}
+			catch (IllegalArgumentException invalid)
+			{
+				if (profileId.equals(currentProfileId))
+				{
+					targetPanel.showRewardEditStatus(invalid.getMessage());
+				}
+			}
+			catch (Exception exception)
+			{
+				log.warn("Could not save reward edit", exception);
+				if (profileId.equals(currentProfileId))
+				{
+					targetPanel.showRewardEditStatus("Save failed; check RuneLite log.");
+				}
+			}
+		});
+	}
+
 	private LootEventStore getStorage() throws java.io.IOException
 	{
 		if (storage == null)
 		{
 			storage = new LootEventStore(getPluginDirectory(), new LootEventCodec(gson),
-				new NoLootConfirmationCodec(gson));
+				new NoLootConfirmationCodec(gson), new RewardEditCodec(gson));
 		}
 		return storage;
 	}

@@ -4,17 +4,18 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
-import java.util.stream.Collectors;
 
 /** Counts observed loot groups; a click is optional evidence for reward type. */
 public final class RewardStatistics
 {
 	private final int observedNormalRewards;
 	private final int observedEggRewards;
+	private final int excludedRewards;
+	private final int correctedRewards;
+	private final Long appliedCorrectionGp;
 	private final int partialGauntletRewards;
 	private final int unclassifiedGauntletRewards;
 	private final int pricedNormalRewards;
@@ -26,6 +27,7 @@ public final class RewardStatistics
 	private final Long lastRewardDeltaGp;
 
 	private RewardStatistics(int observedNormalRewards, int observedEggRewards,
+		int excludedRewards, int correctedRewards, Long appliedCorrectionGp,
 		int partialGauntletRewards, int unclassifiedGauntletRewards,
 		int pricedNormalRewards, Long observedConvertedGp, int valuedNormalRewards,
 		long convertedGp, long expectedGp,
@@ -33,6 +35,9 @@ public final class RewardStatistics
 	{
 		this.observedNormalRewards = observedNormalRewards;
 		this.observedEggRewards = observedEggRewards;
+		this.excludedRewards = excludedRewards;
+		this.correctedRewards = correctedRewards;
+		this.appliedCorrectionGp = appliedCorrectionGp;
 		this.partialGauntletRewards = partialGauntletRewards;
 		this.unclassifiedGauntletRewards = unclassifiedGauntletRewards;
 		this.pricedNormalRewards = pricedNormalRewards;
@@ -59,8 +64,18 @@ public final class RewardStatistics
 	public static RewardStatistics summarize(List<SavedLootEvent> events,
 		Predicate<SavedLootEvent> includeReward, Set<String> confirmedNoLootClickIds)
 	{
+		return summarize(events, includeReward, confirmedNoLootClickIds, RewardEdits.empty());
+	}
+
+	public static RewardStatistics summarize(List<SavedLootEvent> events,
+		Predicate<SavedLootEvent> includeReward, Set<String> confirmedNoLootClickIds,
+		RewardEdits edits)
+	{
 		int normal = 0;
 		int eggs = 0;
+		int excluded = 0;
+		int corrected = 0;
+		Long corrections = 0L;
 		int partialGauntlet = 0;
 		int unclassifiedGauntlet = 0;
 		int priced = 0;
@@ -75,6 +90,12 @@ public final class RewardStatistics
 			List<SavedLootEvent> group = reward.getEvents();
 			if (!includeReward.test(reward.getLastEvent()))
 			{
+				continue;
+			}
+			RewardEdit edit = edits.get(reward.getGroupId());
+			if (edit != null && edit.isExcluded())
+			{
+				excluded++;
 				continue;
 			}
 			RewardClickCandidate click = null;
@@ -116,7 +137,37 @@ public final class RewardStatistics
 					continue;
 				}
 			}
-			Long groupActual = sumDistinctCallbacks(group);
+			Long groupActual = reward.getConvertedGp();
+			if (groupActual != null && edit != null && edit.getGpCorrection() != 0)
+			{
+				try
+				{
+					groupActual = Math.addExact(groupActual, edit.getGpCorrection());
+					if (groupActual < 0)
+					{
+						groupActual = null;
+					}
+					else
+					{
+						corrected++;
+						if (corrections != null)
+						{
+							try
+							{
+								corrections = Math.addExact(corrections, edit.getGpCorrection());
+							}
+							catch (ArithmeticException overflow)
+							{
+								corrections = null;
+							}
+						}
+					}
+				}
+				catch (ArithmeticException overflow)
+				{
+					groupActual = null;
+				}
+			}
 			if (groupActual != null)
 			{
 				priced++;
@@ -151,7 +202,8 @@ public final class RewardStatistics
 			}
 			catch (ArithmeticException overflow)
 			{
-				return new RewardStatistics(normal, eggs, partialGauntlet, unclassifiedGauntlet,
+				return new RewardStatistics(normal, eggs, excluded, corrected, corrections,
+					partialGauntlet, unclassifiedGauntlet,
 					priced, pricedTotal,
 					valued, 0, 0, null, null);
 			}
@@ -165,12 +217,14 @@ public final class RewardStatistics
 			}
 			catch (ArithmeticException overflow)
 			{
-				return new RewardStatistics(normal, eggs, partialGauntlet, unclassifiedGauntlet,
+				return new RewardStatistics(normal, eggs, excluded, corrected, corrections,
+					partialGauntlet, unclassifiedGauntlet,
 					priced, pricedTotal,
 					valued, actualTotal, expectedTotal, null, null);
 			}
 		}
-		return new RewardStatistics(normal, eggs, partialGauntlet, unclassifiedGauntlet,
+		return new RewardStatistics(normal, eggs, excluded, corrected, corrections,
+			partialGauntlet, unclassifiedGauntlet,
 			priced, pricedTotal,
 			valued, actualTotal, expectedTotal, net, lastDelta);
 	}
@@ -191,38 +245,12 @@ public final class RewardStatistics
 		return true;
 	}
 
-	private static Long sumDistinctCallbacks(List<SavedLootEvent> group)
-	{
-		long total = 0;
-		Set<String> seen = new HashSet<>();
-		try
-		{
-			for (SavedLootEvent event : group)
-			{
-				Long gp = event.getConvertedGp();
-				if (gp == null)
-				{
-					return null;
-				}
-				String signature = event.getClientTick() + ":" + event.getItems().stream()
-					.map(item -> item.getItemId() + "x" + item.getQuantity())
-					.sorted().collect(Collectors.joining(","));
-				if (seen.add(signature))
-				{
-					total = Math.addExact(total, gp);
-				}
-			}
-			return total;
-		}
-		catch (ArithmeticException overflow)
-		{
-			return null;
-		}
-	}
-
 	public int getObservedNormalRewards() { return observedNormalRewards; }
 	public int getObservedLootRewards() { return observedNormalRewards + observedEggRewards; }
 	public int getObservedEggRewards() { return observedEggRewards; }
+	public int getExcludedRewards() { return excludedRewards; }
+	public int getCorrectedRewards() { return correctedRewards; }
+	public Long getAppliedCorrectionGp() { return appliedCorrectionGp; }
 	public int getPartialGauntletRewards() { return partialGauntletRewards; }
 	public int getUnclassifiedGauntletRewards() { return unclassifiedGauntletRewards; }
 	public int getPricedNormalRewards() { return pricedNormalRewards; }
