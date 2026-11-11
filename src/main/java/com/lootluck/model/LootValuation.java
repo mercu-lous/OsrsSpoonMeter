@@ -1,12 +1,32 @@
 package com.lootluck.model;
 
 import java.util.List;
+import net.runelite.api.gameval.ItemID;
 
 /** Returns no total when any price is unavailable or arithmetic overflows. */
 public final class LootValuation
 {
 	private LootValuation()
 	{
+	}
+
+	/** Keeps an unavailable price nullable and values coins at face value. */
+	public static Long directUnitGp(int itemId, long reportedPrice,
+		boolean untradeable, boolean geTradeable)
+	{
+		if (itemId == ItemID.COINS)
+		{
+			return 1L;
+		}
+		if (reportedPrice > 0 && geTradeable)
+		{
+			return reportedPrice;
+		}
+		if (untradeable)
+		{
+			return 0L;
+		}
+		return null;
 	}
 
 	public static Long totalGpIfComplete(List<LootItemPreview> items)

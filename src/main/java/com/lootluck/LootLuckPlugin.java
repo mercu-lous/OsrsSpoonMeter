@@ -5,6 +5,7 @@ import com.google.gson.Gson;
 import com.lootluck.model.LootEventPreview;
 import com.lootluck.model.ExpectedValueSnapshot;
 import com.lootluck.model.LootItemPreview;
+import com.lootluck.model.LootValuation;
 import com.lootluck.model.BossDefinition;
 import com.lootluck.model.BossRegistry;
 import com.lootluck.model.GauntletCompletionTracker;
@@ -40,6 +41,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.api.ItemComposition;
+import net.runelite.api.gameval.ItemID;
 import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameTick;
@@ -155,17 +157,22 @@ public class LootLuckPlugin extends Plugin
 			ItemComposition canonicalComposition = itemManager.getItemComposition(itemManager.canonicalize(item.getId()));
 			String name = composition == null ? null : composition.getName();
 			boolean untradeable = canonicalComposition != null && !canonicalComposition.isTradeable();
-			boolean directSale = price > 0 && (canonicalComposition == null || canonicalComposition.isGeTradeable());
+			boolean geTradeable = canonicalComposition == null || canonicalComposition.isGeTradeable();
+			Long directUnitGp = LootValuation.directUnitGp(item.getId(), price, untradeable, geTradeable);
 			int highAlchGp = composition == null ? 0 : composition.getHaPrice();
 			String priceSource = wikiPriceSetting ? "RUNELITE_WIKI_ADJUSTED" : "RUNELITE_JAGEX";
+			String itemPriceSource = item.getId() == ItemID.COINS ? "CURRENCY_FACE_VALUE"
+				: directUnitGp == null ? "UNAVAILABLE"
+				: untradeable ? "UNTRADEABLE_NO_GE_SALE" : priceSource;
 			items.add(new LootItemPreview(item.getId(), item.getQuantity(),
 				name == null || name.isEmpty() ? "Item #" + item.getId() : name,
-				directSale ? price : untradeable ? 0L : null,
-				directSale ? priceSource : untradeable ? "UNTRADEABLE_NO_GE_SALE" : "UNAVAILABLE",
+				directUnitGp,
+				itemPriceSource,
 				highAlchGp > 0 ? (long) highAlchGp : null,
-				boss.getRules().quote(item.getId(), item.getQuantity(), directSale ? price : 0,
+				boss.getRules().quote(item.getId(), item.getQuantity(), directUnitGp == null ? 0 : directUnitGp,
 					canonicalComposition != null && canonicalComposition.isTradeable(),
-					outputId -> itemManager.getItemPriceWithSource(outputId, wikiPriceSetting), priceSource)));
+					outputId -> itemManager.getItemPriceWithSource(outputId, wikiPriceSetting),
+					item.getId() == ItemID.COINS ? "CURRENCY_FACE_VALUE" : priceSource)));
 		}
 		LootEventPreview observation = new LootEventPreview(
 			event.getName(),
