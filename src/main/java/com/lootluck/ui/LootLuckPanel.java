@@ -19,6 +19,7 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.GridLayout;
+import java.math.BigDecimal;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
@@ -224,6 +225,14 @@ public final class LootLuckPanel extends PluginPanel
 		latestDeltaGp = stats.getLastRewardDeltaGp();
 		StringBuilder text = new StringBuilder();
 		text.append("\nObserved loot reward groups: ").append(stats.getObservedLootRewards());
+		if (stats.getPricedNormalRewards() > 0)
+		{
+			text.append("\nPriced non-egg rewards: ").append(stats.getPricedNormalRewards())
+				.append(" / ").append(stats.getObservedNormalRewards());
+			text.append("\nGP per priced reward: ")
+				.append(stats.getAverageGpPerPricedReward() == null
+					? "Unavailable" : gp(stats.getAverageGpPerPricedReward()));
+		}
 		if (boss == BossRegistry.MAGGOT_KING)
 		{
 			text.append("\nOpen-stomach or unlinked groups: ")
@@ -246,6 +255,11 @@ public final class LootLuckPanel extends PluginPanel
 				? "\nExpected for valued: " : "\nFixed expected for valued: ")
 				.append(gp(stats.getExpectedGp()));
 			text.append("\nProvisional GP vs expected: ").append(signedGp(stats.getNetLuckGp()));
+			BigDecimal percent = stats.getPercentVsExpected();
+			if (percent != null)
+			{
+				text.append("\nGP vs expected: ").append(signedPercent(percent));
+			}
 			text.append("\nLatest valued reward: ").append(stats.getLastRewardDeltaGp() == null
 				? "Unavailable" : signedGp(stats.getLastRewardDeltaGp()));
 		}
@@ -273,6 +287,7 @@ public final class LootLuckPanel extends PluginPanel
 			+ statisticsSection.trim() + "\n\n" + storageSection.trim();
 		overviewText.setText(content);
 		highlightGpDifference(content, "Provisional GP vs expected: ", totalDeltaGp);
+		highlightGpDifference(content, "GP vs expected: ", totalDeltaGp);
 		highlightGpDifference(content, "Latest valued reward: ", latestDeltaGp);
 	}
 
@@ -282,8 +297,16 @@ public final class LootLuckPanel extends PluginPanel
 		{
 			return;
 		}
-		int start = content.indexOf(label);
-		if (start < 0)
+		int start = content.indexOf('\n' + label);
+		if (start >= 0)
+		{
+			start++;
+		}
+		else if (content.startsWith(label))
+		{
+			start = 0;
+		}
+		else
 		{
 			return;
 		}
@@ -482,6 +505,11 @@ public final class LootLuckPanel extends PluginPanel
 	private static String signedGp(long amount)
 	{
 		return (amount > 0 ? "+" : "") + gp(amount);
+	}
+
+	private static String signedPercent(BigDecimal amount)
+	{
+		return (amount.signum() > 0 ? "+" : "") + amount.toPlainString() + "%";
 	}
 
 	private static String conversionLabel(ConversionQuote quote)

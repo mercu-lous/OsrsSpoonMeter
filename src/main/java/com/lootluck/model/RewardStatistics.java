@@ -1,5 +1,7 @@
 package com.lootluck.model;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.HashSet;
@@ -13,6 +15,8 @@ public final class RewardStatistics
 {
 	private final int observedNormalRewards;
 	private final int observedEggRewards;
+	private final int pricedNormalRewards;
+	private final Long observedConvertedGp;
 	private final int valuedNormalRewards;
 	private final long convertedGp;
 	private final long expectedGp;
@@ -20,11 +24,14 @@ public final class RewardStatistics
 	private final Long lastRewardDeltaGp;
 
 	private RewardStatistics(int observedNormalRewards, int observedEggRewards,
-		int valuedNormalRewards, long convertedGp, long expectedGp,
+		int pricedNormalRewards, Long observedConvertedGp, int valuedNormalRewards,
+		long convertedGp, long expectedGp,
 		Long netLuckGp, Long lastRewardDeltaGp)
 	{
 		this.observedNormalRewards = observedNormalRewards;
 		this.observedEggRewards = observedEggRewards;
+		this.pricedNormalRewards = pricedNormalRewards;
+		this.observedConvertedGp = observedConvertedGp;
 		this.valuedNormalRewards = valuedNormalRewards;
 		this.convertedGp = convertedGp;
 		this.expectedGp = expectedGp;
@@ -49,6 +56,8 @@ public final class RewardStatistics
 	{
 		int normal = 0;
 		int eggs = 0;
+		int priced = 0;
+		Long pricedTotal = 0L;
 		int valued = 0;
 		long actualTotal = 0;
 		long expectedTotal = 0;
@@ -88,6 +97,21 @@ public final class RewardStatistics
 				lastDelta = null;
 			}
 			Long groupActual = sumDistinctCallbacks(group);
+			if (groupActual != null)
+			{
+				priced++;
+				if (pricedTotal != null)
+				{
+					try
+					{
+						pricedTotal = Math.addExact(pricedTotal, groupActual);
+					}
+					catch (ArithmeticException overflow)
+					{
+						pricedTotal = null;
+					}
+				}
+			}
 			ExpectedValueSnapshot firstExpected = group.get(0).getExpectedSnapshot();
 			Long groupExpected = firstExpected == null ? null : firstExpected.getExpectedGp();
 			if (groupActual == null || groupExpected == null || !hasConsistentExpectedValue(group, firstExpected))
@@ -107,7 +131,8 @@ public final class RewardStatistics
 			}
 			catch (ArithmeticException overflow)
 			{
-				return new RewardStatistics(normal, eggs, valued, 0, 0, null, null);
+				return new RewardStatistics(normal, eggs, priced, pricedTotal,
+					valued, 0, 0, null, null);
 			}
 		}
 		Long net = null;
@@ -119,10 +144,12 @@ public final class RewardStatistics
 			}
 			catch (ArithmeticException overflow)
 			{
-				return new RewardStatistics(normal, eggs, valued, actualTotal, expectedTotal, null, null);
+				return new RewardStatistics(normal, eggs, priced, pricedTotal,
+					valued, actualTotal, expectedTotal, null, null);
 			}
 		}
-		return new RewardStatistics(normal, eggs, valued, actualTotal, expectedTotal, net, lastDelta);
+		return new RewardStatistics(normal, eggs, priced, pricedTotal,
+			valued, actualTotal, expectedTotal, net, lastDelta);
 	}
 
 	private static boolean hasConsistentExpectedValue(List<SavedLootEvent> group, ExpectedValueSnapshot first)
@@ -173,9 +200,22 @@ public final class RewardStatistics
 	public int getObservedNormalRewards() { return observedNormalRewards; }
 	public int getObservedLootRewards() { return observedNormalRewards + observedEggRewards; }
 	public int getObservedEggRewards() { return observedEggRewards; }
+	public int getPricedNormalRewards() { return pricedNormalRewards; }
+	public Long getObservedConvertedGp() { return observedConvertedGp; }
+	public Long getAverageGpPerPricedReward()
+	{
+		return pricedNormalRewards == 0 || observedConvertedGp == null
+			? null : observedConvertedGp / pricedNormalRewards;
+	}
 	public int getValuedNormalRewards() { return valuedNormalRewards; }
 	public long getConvertedGp() { return convertedGp; }
 	public long getExpectedGp() { return expectedGp; }
 	public Long getNetLuckGp() { return netLuckGp; }
+	public BigDecimal getPercentVsExpected()
+	{
+		return netLuckGp == null || expectedGp == 0 ? null
+			: BigDecimal.valueOf(netLuckGp).multiply(BigDecimal.valueOf(100))
+				.divide(BigDecimal.valueOf(expectedGp), 1, RoundingMode.HALF_UP);
+	}
 	public Long getLastRewardDeltaGp() { return lastRewardDeltaGp; }
 }

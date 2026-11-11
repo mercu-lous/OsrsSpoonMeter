@@ -1,5 +1,6 @@
 package com.lootluck.model;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -26,9 +27,13 @@ public class RewardStatisticsTest
 		RewardStatistics stats = RewardStatistics.summarize(Arrays.asList(second, duplicate, extra, first));
 		assertEquals(2, stats.getObservedNormalRewards());
 		assertEquals(2, stats.getValuedNormalRewards());
+		assertEquals(2, stats.getPricedNormalRewards());
+		assertEquals(Long.valueOf(2300), stats.getObservedConvertedGp());
+		assertEquals(Long.valueOf(1150), stats.getAverageGpPerPricedReward());
 		assertEquals(2300, stats.getConvertedGp());
 		assertEquals(2000, stats.getExpectedGp());
 		assertEquals(Long.valueOf(300), stats.getNetLuckGp());
+		assertEquals(new BigDecimal("15.0"), stats.getPercentVsExpected());
 		assertEquals(Long.valueOf(1000), stats.getLastRewardDeltaGp());
 	}
 
@@ -42,8 +47,23 @@ public class RewardStatisticsTest
 		assertEquals(2, stats.getObservedNormalRewards());
 		assertEquals(1, stats.getObservedEggRewards());
 		assertEquals(1, stats.getValuedNormalRewards());
+		assertEquals(2, stats.getPricedNormalRewards());
+		assertEquals(Long.valueOf(300), stats.getAverageGpPerPricedReward());
 		assertEquals(Long.valueOf(-500), stats.getNetLuckGp());
+		assertEquals(new BigDecimal("-50.0"), stats.getPercentVsExpected());
 		assertNull(stats.getLastRewardDeltaGp());
+		RewardStatistics onlyOldReward = RewardStatistics.summarize(Collections.singletonList(unvalued));
+		assertEquals(Long.valueOf(100), onlyOldReward.getAverageGpPerPricedReward());
+		assertNull(onlyOldReward.getPercentVsExpected());
+	}
+
+	@Test
+	public void zeroExpectedValueDoesNotProduceAPercentage()
+	{
+		RewardStatistics stats = RewardStatistics.summarize(Collections.singletonList(
+			event(8, 8, "OPEN_STOMACH", 400, 402, 458, 100, 0L)));
+		assertEquals(Long.valueOf(100), stats.getNetLuckGp());
+		assertNull(stats.getPercentVsExpected());
 	}
 
 	@Test

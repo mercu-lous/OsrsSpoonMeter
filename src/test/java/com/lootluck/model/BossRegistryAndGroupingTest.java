@@ -1,5 +1,6 @@
 package com.lootluck.model;
 
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -124,6 +125,35 @@ public class BossRegistryAndGroupingTest
 		RewardStatistics stats = RewardStatistics.summarize(Collections.singletonList(event));
 		assertEquals(1, stats.getObservedLootRewards());
 		assertEquals(Long.valueOf(-900), stats.getNetLuckGp());
+	}
+
+	@Test
+	public void earlierVorkathLootContributesToAverageButNotFixedExpectedComparison()
+	{
+		SavedLootEvent earlier = pricedEvent("earlier-vorkath", 0, 251179L, null);
+		ExpectedValueSnapshot expected = BossRegistry.VORKATH.getRules().expected(null,
+			id -> 1L, "RUNELITE_JAGEX", START.plusSeconds(60));
+		SavedLootEvent later = pricedEvent("later-vorkath", 60, 85905L, expected);
+		RewardStatistics stats = ProfileDashboard.fromObservations(Arrays.asList(earlier, later),
+			Collections.emptyList(), "run", START.plusSeconds(61), ZoneOffset.UTC)
+			.get(BossRegistry.VORKATH).get(RewardScope.ALL_TIME);
+		assertEquals(2, stats.getObservedLootRewards());
+		assertEquals(2, stats.getPricedNormalRewards());
+		assertEquals(Long.valueOf(168542), stats.getAverageGpPerPricedReward());
+		assertEquals(1, stats.getValuedNormalRewards());
+		assertEquals(Long.valueOf(-58499), stats.getNetLuckGp());
+		assertEquals(new BigDecimal("-40.5"), stats.getPercentVsExpected());
+	}
+
+	private static SavedLootEvent pricedEvent(String name, long second, long gp,
+		ExpectedValueSnapshot expected)
+	{
+		ConversionQuote conversion = new ConversionQuote("DIRECT_GE", gp, null,
+			"RUNELITE_JAGEX", 1, Collections.emptyList());
+		return new SavedLootEvent(id(name), PROFILE, "run", START.plusSeconds(second),
+			"Vorkath", "NPC", 0, 1, 102, Collections.singletonList(
+				new LootItemPreview(450, 1, "Test", gp, "RUNELITE_JAGEX", null, conversion)),
+			null, expected);
 	}
 
 	private static SavedLootEvent event(String name, String profile, String session,
