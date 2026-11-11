@@ -72,6 +72,27 @@ public class ManualRewardEditsTest
 		assertEquals(Long.valueOf(3000), restored.getObservedConvertedGp());
 	}
 
+	@Test
+	public void standaloneRewardAddsToLuckWithoutChangingCapturedLootAverage()
+	{
+		SavedLootEvent captured = event("captured", START, "run", 10000);
+		ManualReward manual = new ManualReward(UUID.randomUUID().toString(), PROFILE,
+			BossRegistry.VORKATH.getId(), "run", START.plusSeconds(60), 200000, 144404L,
+			"Missed callback", true);
+		ProfileDashboard dashboard = ProfileDashboard.fromObservations(
+			Collections.singletonList(captured), Collections.emptyList(), RewardEdits.empty(),
+			ManualRewards.empty().with(manual), "run", START.plusSeconds(120), ZoneOffset.UTC);
+		RewardStatistics stats = dashboard.get(BossRegistry.VORKATH).get(RewardScope.ALL_TIME);
+		assertEquals(1, stats.getObservedLootRewards());
+		assertEquals(1, stats.getPricedNormalRewards());
+		assertEquals(Long.valueOf(10000), stats.getAverageGpPerPricedReward());
+		assertEquals(Long.valueOf(10000), stats.getObservedConvertedGp());
+		assertEquals(1, stats.getManualRewardCount());
+		assertEquals(2, stats.getValuedNormalRewards());
+		assertEquals(Long.valueOf(210000 - 2 * 144404), stats.getNetLuckGp());
+		assertEquals(2, dashboard.get(BossRegistry.VORKATH).getHistory(RewardScope.ALL_TIME).size());
+	}
+
 	private static SavedLootEvent event(String name, Instant time, String session, long gp)
 	{
 		ConversionQuote quote = new ConversionQuote("DIRECT_GE", gp, null,

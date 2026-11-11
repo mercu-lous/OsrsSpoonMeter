@@ -12,12 +12,14 @@ import com.lootluck.model.GauntletOutcome;
 import com.lootluck.model.NoLootConfirmation;
 import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.RewardEdit;
+import com.lootluck.model.ManualReward;
 import com.lootluck.model.ProfileDashboard;
 import com.lootluck.model.SavedLootEvent;
 import com.lootluck.storage.LootEventCodec;
 import com.lootluck.storage.LootEventStore;
 import com.lootluck.storage.NoLootConfirmationCodec;
 import com.lootluck.storage.RewardEditCodec;
+import com.lootluck.storage.ManualRewardCodec;
 import com.lootluck.storage.ProfileIds;
 import com.lootluck.ui.LootLuckPanel;
 import java.awt.Color;
@@ -109,6 +111,7 @@ public class LootLuckPlugin extends Plugin
 		});
 		panel = new LootLuckPanel();
 		panel.setRewardEditHandler(this::saveManualRewardEdit);
+		panel.setManualRewardHandlers(this::addManualReward, this::setManualRewardIncluded);
 		navigationButton = NavigationButton.builder()
 			.tooltip("Loot Luck Tracker")
 			.icon(createIcon())
@@ -495,12 +498,113 @@ public class LootLuckPlugin extends Plugin
 		});
 	}
 
+	private void addManualReward(BossDefinition boss, long actualGp, Long expectedGp, String note)
+	{
+		String profileId = currentProfileId;
+		LootLuckPanel targetPanel = panel;
+		if (profileId == null || targetPanel == null)
+		{
+			if (targetPanel != null)
+			{
+				targetPanel.showManualRewardStatus("Log in to add a reward.");
+			}
+			return;
+		}
+		ManualReward reward = new ManualReward(UUID.randomUUID().toString(), profileId,
+			boss.getId(), sessionId, Instant.now(), actualGp, expectedGp, note, true);
+		writeManualReward(profileId, reward, targetPanel, "Manual reward saved.");
+	}
+
+	private void setManualRewardIncluded(String id, boolean included)
+	{
+		String profileId = currentProfileId;
+		LootLuckPanel targetPanel = panel;
+		if (profileId == null || targetPanel == null)
+		{
+			if (targetPanel != null)
+			{
+				targetPanel.showManualRewardStatus("Log in to change a reward.");
+			}
+			return;
+		}
+		ZoneId summaryZone = calendarZone == null ? ZoneId.systemDefault() : calendarZone;
+		submitStorageTask(() -> {
+			try
+			{
+				ManualReward existing = getStorage().readManualRewards(profileId).get(id);
+				if (existing == null)
+				{
+					throw new IllegalArgumentException("Manual reward no longer exists.");
+				}
+				getStorage().saveManualReward(existing.withIncluded(included));
+				ProfileDashboard statistics = readStatistics(profileId, summaryZone);
+				if (profileId.equals(currentProfileId))
+				{
+					if (statistics == null)
+					{
+						targetPanel.showStatisticsUnavailable();
+						targetPanel.showManualRewardStatus("Change saved; summary could not reload.");
+					}
+					else
+					{
+						targetPanel.showStatistics(statistics);
+						targetPanel.showManualRewardStatus(included
+							? "Manual reward restored." : "Manual reward excluded.");
+					}
+				}
+			}
+			catch (Exception exception)
+			{
+				log.warn("Could not change manual reward", exception);
+				if (profileId.equals(currentProfileId))
+				{
+					targetPanel.showManualRewardStatus("Change failed; check RuneLite log.");
+				}
+			}
+		});
+	}
+
+	private void writeManualReward(String profileId, ManualReward reward,
+		LootLuckPanel targetPanel, String successStatus)
+	{
+		ZoneId summaryZone = calendarZone == null ? ZoneId.systemDefault() : calendarZone;
+		submitStorageTask(() -> {
+			try
+			{
+				getStorage().saveManualReward(reward);
+				ProfileDashboard statistics = readStatistics(profileId, summaryZone);
+				if (profileId.equals(currentProfileId))
+				{
+					if (statistics == null)
+					{
+						targetPanel.showStatisticsUnavailable();
+						targetPanel.showManualRewardStatus("Saved; summary could not reload.");
+					}
+					else
+					{
+						targetPanel.showStatistics(statistics);
+						targetPanel.showManualRewardStatus(successStatus);
+					}
+				}
+			}
+			catch (Exception exception)
+			{
+				log.warn("Could not save manual reward", exception);
+				if (profileId.equals(currentProfileId))
+				{
+					targetPanel.showManualRewardStatus("Save failed; check RuneLite log.");
+				}
+			}
+		});
+	}
+
 	private LootEventStore getStorage() throws java.io.IOException
 	{
 		if (storage == null)
 		{
 			storage = new LootEventStore(getPluginDirectory(), new LootEventCodec(gson),
-				new NoLootConfirmationCodec(gson), new RewardEditCodec(gson));
+				new NoLootConfirmationCodec(gson), new RewardEditCodec(gson),
+				new ManualRewardCodec(gson));
 		}
 		return storage;
 	}

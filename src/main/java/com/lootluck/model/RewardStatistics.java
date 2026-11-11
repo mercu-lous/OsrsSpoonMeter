@@ -20,6 +20,9 @@ public final class RewardStatistics
 	private final int unclassifiedGauntletRewards;
 	private final int pricedNormalRewards;
 	private final Long observedConvertedGp;
+	private final int manualRewardCount;
+	private final int manualComparableRewardCount;
+	private final Long manualActualGp;
 	private final int valuedNormalRewards;
 	private final long convertedGp;
 	private final long expectedGp;
@@ -29,7 +32,9 @@ public final class RewardStatistics
 	private RewardStatistics(int observedNormalRewards, int observedEggRewards,
 		int excludedRewards, int correctedRewards, Long appliedCorrectionGp,
 		int partialGauntletRewards, int unclassifiedGauntletRewards,
-		int pricedNormalRewards, Long observedConvertedGp, int valuedNormalRewards,
+		int pricedNormalRewards, Long observedConvertedGp,
+		int manualRewardCount, int manualComparableRewardCount, Long manualActualGp,
+		int valuedNormalRewards,
 		long convertedGp, long expectedGp,
 		Long netLuckGp, Long lastRewardDeltaGp)
 	{
@@ -42,6 +47,9 @@ public final class RewardStatistics
 		this.unclassifiedGauntletRewards = unclassifiedGauntletRewards;
 		this.pricedNormalRewards = pricedNormalRewards;
 		this.observedConvertedGp = observedConvertedGp;
+		this.manualRewardCount = manualRewardCount;
+		this.manualComparableRewardCount = manualComparableRewardCount;
+		this.manualActualGp = manualActualGp;
 		this.valuedNormalRewards = valuedNormalRewards;
 		this.convertedGp = convertedGp;
 		this.expectedGp = expectedGp;
@@ -71,6 +79,15 @@ public final class RewardStatistics
 		Predicate<SavedLootEvent> includeReward, Set<String> confirmedNoLootClickIds,
 		RewardEdits edits)
 	{
+		return summarize(events, includeReward, confirmedNoLootClickIds, edits,
+			Collections.emptyList(), reward -> true);
+	}
+
+	public static RewardStatistics summarize(List<SavedLootEvent> events,
+		Predicate<SavedLootEvent> includeReward, Set<String> confirmedNoLootClickIds,
+		RewardEdits edits, List<ManualReward> manualRewards,
+		Predicate<ManualReward> includeManual)
+	{
 		int normal = 0;
 		int eggs = 0;
 		int excluded = 0;
@@ -80,6 +97,9 @@ public final class RewardStatistics
 		int unclassifiedGauntlet = 0;
 		int priced = 0;
 		Long pricedTotal = 0L;
+		int manualCount = 0;
+		int manualComparable = 0;
+		Long manualTotal = 0L;
 		int valued = 0;
 		long actualTotal = 0;
 		long expectedTotal = 0;
@@ -204,7 +224,55 @@ public final class RewardStatistics
 			{
 				return new RewardStatistics(normal, eggs, excluded, corrected, corrections,
 					partialGauntlet, unclassifiedGauntlet,
-					priced, pricedTotal,
+					priced, pricedTotal, manualCount, manualComparable, manualTotal,
+					valued, 0, 0, null, null);
+			}
+		}
+		for (ManualReward reward : manualRewards)
+		{
+			if (!reward.isIncluded() || !includeManual.test(reward))
+			{
+				continue;
+			}
+			manualCount++;
+			if (manualTotal != null)
+			{
+				try
+				{
+					manualTotal = Math.addExact(manualTotal, reward.getActualGp());
+				}
+				catch (ArithmeticException overflow)
+				{
+					manualTotal = null;
+				}
+			}
+			boolean newest = latestNormal == null || reward.getRecordedAtUtc().isAfter(latestNormal);
+			if (newest)
+			{
+				latestNormal = reward.getRecordedAtUtc();
+				lastDelta = null;
+			}
+			if (reward.getExpectedGp() == null)
+			{
+				continue;
+			}
+			try
+			{
+				long delta = Math.subtractExact(reward.getActualGp(), reward.getExpectedGp());
+				actualTotal = Math.addExact(actualTotal, reward.getActualGp());
+				expectedTotal = Math.addExact(expectedTotal, reward.getExpectedGp());
+				manualComparable++;
+				valued++;
+				if (newest)
+				{
+					lastDelta = delta;
+				}
+			}
+			catch (ArithmeticException overflow)
+			{
+				return new RewardStatistics(normal, eggs, excluded, corrected, corrections,
+					partialGauntlet, unclassifiedGauntlet, priced, pricedTotal,
+					manualCount, manualComparable, manualTotal,
 					valued, 0, 0, null, null);
 			}
 		}
@@ -219,13 +287,13 @@ public final class RewardStatistics
 			{
 				return new RewardStatistics(normal, eggs, excluded, corrected, corrections,
 					partialGauntlet, unclassifiedGauntlet,
-					priced, pricedTotal,
+					priced, pricedTotal, manualCount, manualComparable, manualTotal,
 					valued, actualTotal, expectedTotal, null, null);
 			}
 		}
 		return new RewardStatistics(normal, eggs, excluded, corrected, corrections,
 			partialGauntlet, unclassifiedGauntlet,
-			priced, pricedTotal,
+			priced, pricedTotal, manualCount, manualComparable, manualTotal,
 			valued, actualTotal, expectedTotal, net, lastDelta);
 	}
 
@@ -255,6 +323,9 @@ public final class RewardStatistics
 	public int getUnclassifiedGauntletRewards() { return unclassifiedGauntletRewards; }
 	public int getPricedNormalRewards() { return pricedNormalRewards; }
 	public Long getObservedConvertedGp() { return observedConvertedGp; }
+	public int getManualRewardCount() { return manualRewardCount; }
+	public int getManualComparableRewardCount() { return manualComparableRewardCount; }
+	public Long getManualActualGp() { return manualActualGp; }
 	public Long getAverageGpPerPricedReward()
 	{
 		return pricedNormalRewards == 0 || observedConvertedGp == null

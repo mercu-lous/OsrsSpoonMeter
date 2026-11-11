@@ -15,12 +15,15 @@ import com.lootluck.model.GauntletOutcome;
 import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.RewardHistoryEntry;
 import com.lootluck.model.RewardEdit;
+import com.lootluck.model.ManualReward;
 import com.lootluck.model.RewardScope;
 import com.lootluck.model.RewardStatistics;
 import com.lootluck.model.RewardSummary;
 import com.lootluck.model.SavedLootEvent;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.GridLayout;
 import java.math.BigDecimal;
@@ -31,9 +34,12 @@ import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.function.BiConsumer;
 import javax.swing.JButton;
+import javax.swing.BoxLayout;
 import javax.swing.JCheckBox;
 import javax.swing.JComboBox;
+import javax.swing.JComponent;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -62,6 +68,16 @@ public final class LootLuckPanel extends PluginPanel
 	private final JTextField editReason = new JTextField();
 	private final JLabel editStatus = new JLabel("Select a saved reward.");
 	private Consumer<RewardEdit> editHandler;
+	private final JTextField manualActualGp = new JTextField();
+	private final JTextField manualExpectedGp = new JTextField();
+	private final JTextField manualReason = new JTextField();
+	private final JButton manualAdd = new JButton("Add manual reward");
+	private final JComboBox<ManualChoice> manualChoice = new JComboBox<>();
+	private final JTextArea manualPreview = new JTextArea(6, 16);
+	private final JTextArea manualStatus = new JTextArea("Enter a missed reward.", 3, 16);
+	private final JButton manualToggle = new JButton("Exclude selected");
+	private ManualRewardAddHandler manualAddHandler;
+	private BiConsumer<String, Boolean> manualToggleHandler;
 	private final JComboBox<BossDefinition> bossSelector = new JComboBox<>(
 		BossRegistry.bosses().toArray(new BossDefinition[0]));
 	private final JComboBox<RewardScope> statisticsScope = new JComboBox<>(RewardScope.values());
@@ -86,6 +102,7 @@ public final class LootLuckPanel extends PluginPanel
 			renderStatistics();
 			renderHistory();
 			renderEditChoices();
+			renderManualChoices();
 		});
 		header.add(bossSelector);
 		statisticsScope.addActionListener(event -> {
@@ -93,6 +110,7 @@ public final class LootLuckPanel extends PluginPanel
 			renderHistory();
 			renderRankings();
 			renderEditChoices();
+			renderManualChoices();
 		});
 		header.add(statisticsScope);
 		add(header, BorderLayout.NORTH);
@@ -116,7 +134,192 @@ public final class LootLuckPanel extends PluginPanel
 		tabs.addTab("History", new JScrollPane(historyText));
 		tabs.addTab("Rankings", new JScrollPane(rankingsText));
 		tabs.addTab("Edit", buildEditTab());
+		tabs.addTab("Manual", buildManualTab());
+		tabs.setToolTipTextAt(4, "Add a missed reward and manage manual entries");
 		add(tabs, BorderLayout.CENTER);
+	}
+
+	@FunctionalInterface
+	public interface ManualRewardAddHandler
+	{
+		void add(BossDefinition boss, long actualGp, Long expectedGp, String note);
+	}
+
+	public void setManualRewardHandlers(ManualRewardAddHandler addHandler,
+		BiConsumer<String, Boolean> toggleHandler)
+	{
+		this.manualAddHandler = addHandler;
+		this.manualToggleHandler = toggleHandler;
+	}
+
+	private JPanel buildManualTab()
+	{
+		JPanel form = new JPanel();
+		form.setLayout(new BoxLayout(form, BoxLayout.Y_AXIS));
+		form.add(new JLabel("Missed reward for selected boss"));
+		form.add(new JLabel("Actual GP received"));
+		form.add(manualActualGp);
+		form.add(new JLabel("Expected GP (optional)"));
+		form.add(manualExpectedGp);
+		form.add(new JLabel("Reason (optional)"));
+		form.add(manualReason);
+		manualAdd.addActionListener(event -> addManualReward());
+		form.add(manualAdd);
+		manualStatus.setEditable(false);
+		manualStatus.setLineWrap(true);
+		manualStatus.setWrapStyleWord(true);
+		manualStatus.setOpaque(false);
+		form.add(manualStatus);
+		form.add(new JLabel("Saved manual rewards in this view"));
+		manualChoice.addActionListener(event -> loadSelectedManual());
+		form.add(manualChoice);
+		manualToggle.addActionListener(event -> toggleSelectedManual());
+		form.add(manualToggle);
+		manualPreview.setEditable(false);
+		manualPreview.setLineWrap(true);
+		manualPreview.setWrapStyleWord(true);
+		manualPreview.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+		manualPreview.setText("Manual GP is kept separate from captured loot. Add expected GP only when this reward should affect the GP comparison.");
+		form.add(manualPreview);
+		for (Component component : form.getComponents())
+		{
+			JComponent control = (JComponent) component;
+			control.setAlignmentX(Component.LEFT_ALIGNMENT);
+			control.setMaximumSize(new Dimension(Integer.MAX_VALUE,
+				control.getPreferredSize().height + 4));
+		}
+		JPanel tab = new JPanel(new BorderLayout());
+		tab.add(new JScrollPane(form), BorderLayout.CENTER);
+		return tab;
+	}
+
+	private void addManualReward()
+	{
+		if (manualAddHandler == null)
+		{
+			manualStatus.setText("Manual entry unavailable.");
+			return;
+		}
+		try
+		{
+			String actualText = manualActualGp.getText().trim().replace(",", "");
+			String expectedText = manualExpectedGp.getText().trim().replace(",", "");
+			if (actualText.isEmpty())
+			{
+				throw new IllegalArgumentException("Actual GP is required.");
+			}
+			long actual = Long.parseLong(actualText);
+			Long expected = expectedText.isEmpty() ? null : Long.parseLong(expectedText);
+			if (actual < 0 || (expected != null && expected <= 0)
+				|| manualReason.getText().trim().length() > 160)
+			{
+				throw new IllegalArgumentException("Use nonnegative actual GP, positive expected GP, and a reason up to 160 characters.");
+			}
+			manualStatus.setText("Saving manual reward...");
+			manualAdd.setEnabled(false);
+			manualAddHandler.add(selectedBoss(), actual, expected, manualReason.getText());
+		}
+		catch (IllegalArgumentException invalid)
+		{
+			manualAdd.setEnabled(true);
+			manualStatus.setText(invalid.getMessage());
+		}
+	}
+
+	private void toggleSelectedManual()
+	{
+		ManualChoice selected = (ManualChoice) manualChoice.getSelectedItem();
+		if (selected == null || manualToggleHandler == null)
+		{
+			manualStatus.setText("No manual reward selected.");
+			return;
+		}
+		manualStatus.setText("Saving manual reward...");
+		manualToggleHandler.accept(selected.reward.getId(), !selected.reward.isIncluded());
+	}
+
+	public void showManualRewardStatus(String status)
+	{
+		SwingUtilities.invokeLater(() -> {
+			manualStatus.setText(status);
+			manualAdd.setEnabled(true);
+			if ("Manual reward saved.".equals(status))
+			{
+				manualActualGp.setText("");
+				manualExpectedGp.setText("");
+				manualReason.setText("");
+			}
+		});
+	}
+
+	private void renderManualChoices()
+	{
+		ManualChoice previous = (ManualChoice) manualChoice.getSelectedItem();
+		String previousId = previous == null ? null : previous.reward.getId();
+		manualChoice.removeAllItems();
+		if (dashboard != null)
+		{
+			RewardScope scope = (RewardScope) statisticsScope.getSelectedItem();
+			if (scope == null)
+			{
+				scope = RewardScope.ALL_TIME;
+			}
+			RewardSummary summary = dashboard.get(selectedBoss());
+			for (ManualReward reward : summary.getManualRewards(scope))
+			{
+				manualChoice.addItem(new ManualChoice(reward, summary.getCalendarZone()));
+			}
+		}
+		if (previousId != null)
+		{
+			for (int index = 0; index < manualChoice.getItemCount(); index++)
+			{
+				if (previousId.equals(manualChoice.getItemAt(index).reward.getId()))
+				{
+					manualChoice.setSelectedIndex(index);
+					break;
+				}
+			}
+		}
+		loadSelectedManual();
+	}
+
+	private void loadSelectedManual()
+	{
+		ManualChoice selected = (ManualChoice) manualChoice.getSelectedItem();
+		manualToggle.setEnabled(selected != null);
+		if (selected == null)
+		{
+			manualPreview.setText("No manual rewards in this view.");
+			return;
+		}
+		ManualReward reward = selected.reward;
+		manualToggle.setText(reward.isIncluded() ? "Exclude selected" : "Restore selected");
+		manualPreview.setText("Recorded: " + TIME_FORMAT.withZone(selected.zone).format(reward.getRecordedAtUtc())
+			+ "\nActual: " + gp(reward.getActualGp())
+			+ "\nExpected: " + (reward.getExpectedGp() == null ? "Not compared" : gp(reward.getExpectedGp()))
+			+ "\nStatus: " + (reward.isIncluded() ? "Included" : "Excluded")
+			+ (reward.getNote().isEmpty() ? "" : "\nReason: " + reward.getNote()));
+	}
+
+	private static final class ManualChoice
+	{
+		private final ManualReward reward;
+		private final ZoneId zone;
+
+		private ManualChoice(ManualReward reward, ZoneId zone)
+		{
+			this.reward = reward;
+			this.zone = zone;
+		}
+
+		@Override
+		public String toString()
+		{
+			return DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(zone)
+				.format(reward.getRecordedAtUtc()) + " " + gp(reward.getActualGp())
+				+ (reward.isIncluded() ? "" : " (excluded)");
+		}
 	}
 
 	private JPanel buildEditTab()
@@ -277,10 +480,12 @@ public final class LootLuckPanel extends PluginPanel
 			showSelectedBossSections();
 			dashboard = null;
 			statisticsStatus = "Loading reward summary...";
+			manualAdd.setEnabled(true);
 			renderStatistics();
 			renderHistory();
 			renderRankings();
 			renderEditChoices();
+			renderManualChoices();
 		});
 	}
 
@@ -371,6 +576,7 @@ public final class LootLuckPanel extends PluginPanel
 			renderHistory();
 			renderRankings();
 			renderEditChoices();
+			renderManualChoices();
 		});
 	}
 
@@ -383,6 +589,7 @@ public final class LootLuckPanel extends PluginPanel
 			renderHistory();
 			renderRankings();
 			renderEditChoices();
+			renderManualChoices();
 		});
 	}
 
@@ -408,6 +615,13 @@ public final class LootLuckPanel extends PluginPanel
 		latestDeltaGp = stats.getLastRewardDeltaGp();
 		StringBuilder text = new StringBuilder();
 		text.append("\nObserved loot reward groups: ").append(stats.getObservedLootRewards());
+		if (stats.getManualRewardCount() > 0)
+		{
+			text.append("\nManual rewards included: ").append(stats.getManualRewardCount());
+			text.append("\nManual GP recorded: ").append(stats.getManualActualGp() == null
+				? "Unavailable" : gp(stats.getManualActualGp()));
+			text.append("\nManual rewards compared: ").append(stats.getManualComparableRewardCount());
+		}
 		if (stats.getExcludedRewards() > 0)
 		{
 			text.append("\nExcluded reward groups: ").append(stats.getExcludedRewards());
@@ -440,22 +654,20 @@ public final class LootLuckPanel extends PluginPanel
 		{
 			text.append("\nOpen-stomach or unlinked groups: ")
 				.append(stats.getObservedNormalRewards());
-			text.append("\nValued Open-stomach rewards: ").append(stats.getValuedNormalRewards());
+			text.append("\nComparable rewards (including manual): ").append(stats.getValuedNormalRewards());
 			text.append("\nTake-eggs loot-linked: ").append(stats.getObservedEggRewards());
 			text.append("\nConfirmed no-loot Take-eggs: ")
 				.append(rewardSummary.getConfirmedNoLoot(scope));
 		}
 		else if (stats.getValuedNormalRewards() > 0)
 		{
-			text.append("\nValued reward groups: ").append(stats.getValuedNormalRewards());
+			text.append("\nComparable rewards: ").append(stats.getValuedNormalRewards());
 		}
 		if (stats.getNetLuckGp() != null)
 		{
-			text.append(boss == BossRegistry.MAGGOT_KING
-				? "\nValued converted loot: " : "\nValued direct GE loot: ")
+			text.append("\nComparable actual GP: ")
 				.append(gp(stats.getConvertedGp()));
-			text.append(boss == BossRegistry.MAGGOT_KING
-				? "\nExpected for valued: " : "\nFixed expected for valued: ")
+			text.append("\nExpected for comparable rewards: ")
 				.append(gp(stats.getExpectedGp()));
 			text.append("\nProvisional GP vs expected: ").append(signedGp(stats.getNetLuckGp()));
 			BigDecimal percent = stats.getPercentVsExpected();
@@ -474,9 +686,9 @@ public final class LootLuckPanel extends PluginPanel
 		}
 		if (boss != BossRegistry.MAGGOT_KING)
 		{
-			text.append("\nFixed Wiki baseline; price changes and untradeable conversions are not updated.");
+			text.append("\nCaptured rewards use the fixed Wiki baseline; manual rewards use entered expected GP. Prices and untradeable conversions are not updated.");
 		}
-		text.append("\nGrouped from loot callbacks within five seconds; not confirmed kill count.\n");
+		text.append("\nCaptured loot callbacks are grouped within five seconds; not confirmed kill count.\n");
 		if (scope.isCalendar())
 		{
 			text.append("Time zone: ").append(rewardSummary.getCalendarZone().getId())
@@ -555,6 +767,19 @@ public final class LootLuckPanel extends PluginPanel
 				text.append("Take-eggs: no loot confirmed by game message\n");
 				text.append("Click tick: ").append(entry.getNoLootConfirmation().getClick().getClientTick())
 					.append("; message tick: ").append(entry.getNoLootConfirmation().getClientTick()).append('\n');
+			}
+			else if (entry.isManualReward())
+			{
+				ManualReward reward = entry.getManualReward();
+				text.append("Manual reward")
+					.append(reward.isIncluded() ? " (included)\n" : " (excluded)\n");
+				text.append("Actual: ").append(gp(reward.getActualGp())).append('\n');
+				text.append("Expected: ").append(reward.getExpectedGp() == null
+					? "Not compared" : gp(reward.getExpectedGp())).append('\n');
+				if (!reward.getNote().isEmpty())
+				{
+					text.append("Reason: ").append(reward.getNote()).append('\n');
+				}
 			}
 			else
 			{
@@ -651,11 +876,16 @@ public final class LootLuckPanel extends PluginPanel
 			text.append(i + 1).append(". ").append(ranking.getBoss().getName())
 				.append("  ").append(signedPercent(ranking.getPercentVsExpected())).append('\n');
 			text.append("   ").append(stats.getValuedNormalRewards())
-				.append(" valued reward groups\n");
+				.append(" comparable rewards\n");
 			text.append("   ").append(signedGp(stats.getNetLuckGp()))
 				.append(" vs expected\n");
 			text.append("   ").append(ranking.getBoss() == BossRegistry.MAGGOT_KING
-				? "Versioned drop table" : "Fixed Wiki baseline").append("\n\n");
+				? "Versioned drop table" : "Fixed Wiki baseline");
+			if (stats.getManualComparableRewardCount() > 0)
+			{
+				text.append(" + entered manual baseline");
+			}
+			text.append("\n\n");
 		}
 		text.append("Ranked by GP percentage for rewards with saved expected values. "
 			+ "Small samples can swing widely. This is not a rare-drop percentile or confirmed kill ranking.");

@@ -30,18 +30,21 @@ public final class RewardSummary
 	private final String sessionId;
 	private final Instant asOfUtc;
 	private final RewardEdits edits;
+	private final List<ManualReward> manualRewards;
 	private final Map<String, String> groupIdByEventId;
 
 	private RewardSummary(Map<RewardScope, RewardStatistics> scopes,
 		Map<RewardScope, Integer> confirmedNoLoot,
 		Map<RewardScope, List<RewardHistoryEntry>> history, ZoneId calendarZone,
-		List<SavedLootEvent> events, String sessionId, Instant asOfUtc, RewardEdits edits)
+		List<SavedLootEvent> events, List<ManualReward> manualRewards,
+		String sessionId, Instant asOfUtc, RewardEdits edits)
 	{
 		this.scopes = Collections.unmodifiableMap(new EnumMap<>(scopes));
 		this.confirmedNoLoot = Collections.unmodifiableMap(new EnumMap<>(confirmedNoLoot));
 		this.history = Collections.unmodifiableMap(new EnumMap<>(history));
 		this.calendarZone = calendarZone;
 		this.events = Collections.unmodifiableList(new ArrayList<>(events));
+		this.manualRewards = Collections.unmodifiableList(new ArrayList<>(manualRewards));
 		this.sessionId = sessionId;
 		this.asOfUtc = asOfUtc;
 		this.edits = edits;
@@ -74,12 +77,21 @@ public final class RewardSummary
 		List<NoLootConfirmation> confirmations, RewardEdits edits, String sessionId,
 		Instant asOfUtc, ZoneId calendarZone)
 	{
+		return fromObservations(events, confirmations, edits, Collections.emptyList(),
+			sessionId, asOfUtc, calendarZone);
+	}
+
+	public static RewardSummary fromObservations(List<SavedLootEvent> events,
+		List<NoLootConfirmation> confirmations, RewardEdits edits, List<ManualReward> manualRewards,
+		String sessionId, Instant asOfUtc, ZoneId calendarZone)
+	{
 		Objects.requireNonNull(events);
 		Objects.requireNonNull(confirmations);
 		Objects.requireNonNull(sessionId);
 		Objects.requireNonNull(asOfUtc);
 		Objects.requireNonNull(calendarZone);
 		Objects.requireNonNull(edits);
+		Objects.requireNonNull(manualRewards);
 		LocalDate today = asOfUtc.atZone(calendarZone).toLocalDate();
 		LocalDate weekStart = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
 		Map<String, NoLootConfirmation> uniqueConfirmations = new LinkedHashMap<>();
@@ -90,15 +102,17 @@ public final class RewardSummary
 		Set<String> noLootClickIds = uniqueConfirmations.keySet();
 		EnumMap<RewardScope, RewardStatistics> results = new EnumMap<>(RewardScope.class);
 		results.put(RewardScope.ALL_TIME, RewardStatistics.summarize(events,
-			event -> true, noLootClickIds, edits));
+			event -> true, noLootClickIds, edits, manualRewards, reward -> true));
 		results.put(RewardScope.CURRENT_RUN, RewardStatistics.summarize(events,
-			event -> sessionId.equals(event.getSessionId()), noLootClickIds, edits));
-		results.put(RewardScope.TODAY, calendarStats(events, today, asOfUtc, calendarZone, noLootClickIds, edits));
-		results.put(RewardScope.THIS_WEEK, calendarStats(events,
+			event -> sessionId.equals(event.getSessionId()), noLootClickIds, edits,
+			manualRewards, reward -> sessionId.equals(reward.getSessionId())));
+		results.put(RewardScope.TODAY, calendarStats(events, manualRewards,
+			today, asOfUtc, calendarZone, noLootClickIds, edits));
+		results.put(RewardScope.THIS_WEEK, calendarStats(events, manualRewards,
 			weekStart, asOfUtc, calendarZone, noLootClickIds, edits));
-		results.put(RewardScope.THIS_MONTH, calendarStats(events,
+		results.put(RewardScope.THIS_MONTH, calendarStats(events, manualRewards,
 			today.withDayOfMonth(1), asOfUtc, calendarZone, noLootClickIds, edits));
-		results.put(RewardScope.THIS_YEAR, calendarStats(events,
+		results.put(RewardScope.THIS_YEAR, calendarStats(events, manualRewards,
 			today.withDayOfYear(1), asOfUtc, calendarZone, noLootClickIds, edits));
 		EnumMap<RewardScope, Integer> noLootCounts = new EnumMap<>(RewardScope.class);
 		noLootCounts.put(RewardScope.ALL_TIME, uniqueConfirmations.size());
@@ -112,14 +126,15 @@ public final class RewardSummary
 			today.withDayOfMonth(1), asOfUtc, calendarZone));
 		noLootCounts.put(RewardScope.THIS_YEAR, calendarNoLoot(uniqueConfirmations,
 			today.withDayOfYear(1), asOfUtc, calendarZone));
-		EnumMap<RewardScope, List<RewardHistoryEntry>> histories = buildHistory(events,
+		EnumMap<RewardScope, List<RewardHistoryEntry>> histories = buildHistory(events, manualRewards,
 			uniqueConfirmations, sessionId, asOfUtc, calendarZone, today, weekStart);
 		return new RewardSummary(results, noLootCounts, histories, calendarZone,
-			events, sessionId, asOfUtc, edits);
+			events, manualRewards, sessionId, asOfUtc, edits);
 	}
 
 	private static EnumMap<RewardScope, List<RewardHistoryEntry>> buildHistory(
-		List<SavedLootEvent> events, Map<String, NoLootConfirmation> confirmations,
+		List<SavedLootEvent> events, List<ManualReward> manualRewards,
+		Map<String, NoLootConfirmation> confirmations,
 		String sessionId, Instant asOfUtc, ZoneId zone, LocalDate today, LocalDate weekStart)
 	{
 		Map<String, Instant> clickTimes = new HashMap<>();
@@ -146,6 +161,10 @@ public final class RewardSummary
 		{
 			allEntries.add(RewardHistoryEntry.noLoot(confirmation,
 				clickTimes.get(confirmation.getClick().getClickId())));
+		}
+		for (ManualReward reward : manualRewards)
+		{
+			allEntries.add(RewardHistoryEntry.manual(reward));
 		}
 		allEntries.sort(Comparator.comparing(RewardHistoryEntry::getObservedAtUtc).reversed());
 		EnumMap<RewardScope, Instant> starts = new EnumMap<>(RewardScope.class);
@@ -188,14 +207,18 @@ public final class RewardSummary
 		return !time.isBefore(starts.get(scope)) && !time.isAfter(asOfUtc);
 	}
 
-	private static RewardStatistics calendarStats(List<SavedLootEvent> events, LocalDate startDate,
+	private static RewardStatistics calendarStats(List<SavedLootEvent> events,
+		List<ManualReward> manualRewards, LocalDate startDate,
 		Instant asOfUtc, ZoneId zone, Set<String> confirmedNoLootClickIds, RewardEdits edits)
 	{
 		Instant start = startDate.atStartOfDay(zone).toInstant();
 		return RewardStatistics.summarize(events, event -> {
 			Instant observedAt = event.getObservedAtUtc();
 			return !observedAt.isBefore(start) && !observedAt.isAfter(asOfUtc);
-		}, confirmedNoLootClickIds, edits);
+		}, confirmedNoLootClickIds, edits, manualRewards, reward -> {
+			Instant recordedAt = reward.getRecordedAtUtc();
+			return !recordedAt.isBefore(start) && !recordedAt.isAfter(asOfUtc);
+		});
 	}
 
 	private static int calendarNoLoot(Map<String, NoLootConfirmation> confirmations,
@@ -273,5 +296,40 @@ public final class RewardSummary
 		}
 		groups.sort(Comparator.comparing(LootRewardGroup::getObservedAtUtc).reversed());
 		return Collections.unmodifiableList(groups);
+	}
+
+	public List<ManualReward> getManualRewards(RewardScope scope)
+	{
+		List<ManualReward> included = new ArrayList<>();
+		LocalDate today = asOfUtc.atZone(calendarZone).toLocalDate();
+		Instant start = scopeStart(scope, today, calendarZone);
+		for (ManualReward reward : manualRewards)
+		{
+			if (scope == RewardScope.CURRENT_RUN && !sessionId.equals(reward.getSessionId()))
+			{
+				continue;
+			}
+			if (scope.isCalendar()
+				&& (reward.getRecordedAtUtc().isBefore(start) || reward.getRecordedAtUtc().isAfter(asOfUtc)))
+			{
+				continue;
+			}
+			included.add(reward);
+		}
+		included.sort(Comparator.comparing(ManualReward::getRecordedAtUtc).reversed());
+		return Collections.unmodifiableList(included);
+	}
+
+	private static Instant scopeStart(RewardScope scope, LocalDate today, ZoneId zone)
+	{
+		switch (scope)
+		{
+			case TODAY: return today.atStartOfDay(zone).toInstant();
+			case THIS_WEEK: return today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+				.atStartOfDay(zone).toInstant();
+			case THIS_MONTH: return today.withDayOfMonth(1).atStartOfDay(zone).toInstant();
+			case THIS_YEAR: return today.withDayOfYear(1).atStartOfDay(zone).toInstant();
+			default: return Instant.MIN;
+		}
 	}
 }

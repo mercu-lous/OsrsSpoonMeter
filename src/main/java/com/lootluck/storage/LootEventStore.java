@@ -9,6 +9,8 @@ import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.RewardEdit;
 import com.lootluck.model.RewardEdits;
 import com.lootluck.model.GauntletOutcome;
+import com.lootluck.model.ManualReward;
+import com.lootluck.model.ManualRewards;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.channels.FileChannel;
@@ -30,14 +32,17 @@ public final class LootEventStore
 	private final LootEventCodec codec;
 	private final NoLootConfirmationCodec confirmationCodec;
 	private final RewardEditCodec editCodec;
+	private final ManualRewardCodec manualRewardCodec;
 
 	public LootEventStore(Filepath pluginDirectory, LootEventCodec codec,
-		NoLootConfirmationCodec confirmationCodec, RewardEditCodec editCodec)
+		NoLootConfirmationCodec confirmationCodec, RewardEditCodec editCodec,
+		ManualRewardCodec manualRewardCodec)
 	{
 		this.pluginDirectory = pluginDirectory;
 		this.codec = codec;
 		this.confirmationCodec = confirmationCodec;
 		this.editCodec = editCodec;
+		this.manualRewardCodec = manualRewardCodec;
 	}
 
 	public boolean save(SavedLootEvent event) throws IOException
@@ -113,7 +118,66 @@ public final class LootEventStore
 			}
 		}
 		return ProfileDashboard.fromObservations(events, confirmations, readRewardEdits(profileId),
+			readManualRewards(profileId),
 			sessionId, Instant.now(), calendarZone);
+	}
+
+	public void saveManualReward(ManualReward reward) throws IOException
+	{
+		String profileId = reward.getProfileId();
+		ManualRewards existing = readManualRewards(profileId);
+		ManualReward previous = existing.get(reward.getId());
+		if (previous != null && (!previous.getBossId().equals(reward.getBossId())
+			|| !previous.getSessionId().equals(reward.getSessionId())
+			|| !previous.getRecordedAtUtc().equals(reward.getRecordedAtUtc())
+			|| previous.getActualGp() != reward.getActualGp()
+			|| !java.util.Objects.equals(previous.getExpectedGp(), reward.getExpectedGp())
+			|| !previous.getNote().equals(reward.getNote())))
+		{
+			throw new IllegalArgumentException("Saved manual reward can only be included or excluded");
+		}
+		Filepath directory = profileDirectory(profileId);
+		directory.createDirectories();
+		Filepath temporary = directory.createTempFile("manual-rewards-", ".tmp");
+		try
+		{
+			temporary.write(manualRewardCodec.encode(existing.with(reward)));
+			try (FileChannel channel = temporary.openFileChannel(StandardOpenOption.WRITE))
+			{
+				channel.force(true);
+			}
+			temporary.moveTo(manualRewardFile(profileId), StandardCopyOption.ATOMIC_MOVE,
+				StandardCopyOption.REPLACE_EXISTING);
+		}
+		finally
+		{
+			temporary.deleteIfExists();
+		}
+	}
+
+	public ManualRewards readManualRewards(String profileId) throws IOException
+	{
+		Filepath file = manualRewardFile(profileId);
+		if (!file.exists())
+		{
+			return ManualRewards.empty();
+		}
+		try
+		{
+			ManualRewards rewards = manualRewardCodec.decode(readJson(file));
+			for (ManualReward reward : rewards.all())
+			{
+				if (!profileId.equals(reward.getProfileId()))
+				{
+					throw new IllegalArgumentException("Manual reward profile does not match directory");
+				}
+			}
+			return rewards;
+		}
+		catch (RuntimeException malformed)
+		{
+			throw new IOException("Could not read saved manual rewards", malformed);
+		}
 	}
 
 	public void saveRewardEdit(String profileId, RewardEdit edit) throws IOException
@@ -265,6 +329,11 @@ public final class LootEventStore
 	private Filepath editFile(String profileId)
 	{
 		return profileDirectory(profileId).joinSegment("reward-edits.json");
+	}
+
+	private Filepath manualRewardFile(String profileId)
+	{
+		return profileDirectory(profileId).joinSegment("manual-rewards.json");
 	}
 
 	private Filepath profileDirectory(String profileId)

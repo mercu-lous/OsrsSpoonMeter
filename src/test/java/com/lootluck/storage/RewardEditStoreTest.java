@@ -41,7 +41,8 @@ public class RewardEditStoreTest
 		Filepath pluginDirectory = constructor.newInstance(base, base);
 		Gson gson = new Gson();
 		LootEventStore store = new LootEventStore(pluginDirectory, new LootEventCodec(gson),
-			new NoLootConfirmationCodec(gson), new RewardEditCodec(gson));
+			new NoLootConfirmationCodec(gson), new RewardEditCodec(gson),
+			new ManualRewardCodec(gson));
 		ConversionQuote quote = new ConversionQuote("DIRECT_GE", 10000L, null,
 			"RUNELITE_JAGEX", 1, Collections.emptyList());
 		SavedLootEvent event = new SavedLootEvent(EVENT_ID, PROFILE, "run", OBSERVED,

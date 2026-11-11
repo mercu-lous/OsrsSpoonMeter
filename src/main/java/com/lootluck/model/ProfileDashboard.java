@@ -36,10 +36,20 @@ public final class ProfileDashboard
 		List<NoLootConfirmation> confirmations, RewardEdits edits,
 		String sessionId, Instant asOfUtc, ZoneId calendarZone)
 	{
+		return fromObservations(events, confirmations, edits, ManualRewards.empty(),
+			sessionId, asOfUtc, calendarZone);
+	}
+
+	public static ProfileDashboard fromObservations(List<SavedLootEvent> events,
+		List<NoLootConfirmation> confirmations, RewardEdits edits, ManualRewards manualRewards,
+		String sessionId, Instant asOfUtc, ZoneId calendarZone)
+	{
 		Map<BossDefinition, List<SavedLootEvent>> byBoss = new LinkedHashMap<>();
+		Map<BossDefinition, List<ManualReward>> manualByBoss = new LinkedHashMap<>();
 		for (BossDefinition boss : BossRegistry.bosses())
 		{
 			byBoss.put(boss, new ArrayList<>());
+			manualByBoss.put(boss, new ArrayList<>());
 		}
 		for (SavedLootEvent event : events)
 		{
@@ -49,12 +59,23 @@ public final class ProfileDashboard
 				byBoss.get(boss).add(event);
 			}
 		}
+		for (ManualReward reward : manualRewards.all())
+		{
+			for (BossDefinition boss : BossRegistry.bosses())
+			{
+				if (boss.getId().equals(reward.getBossId()))
+				{
+					manualByBoss.get(boss).add(reward);
+					break;
+				}
+			}
+		}
 		Map<BossDefinition, RewardSummary> summaries = new LinkedHashMap<>();
 		for (BossDefinition boss : BossRegistry.bosses())
 		{
 			summaries.put(boss, RewardSummary.fromObservations(byBoss.get(boss),
 				boss == BossRegistry.MAGGOT_KING ? confirmations : Collections.emptyList(),
-				edits, sessionId, asOfUtc, calendarZone));
+				edits, manualByBoss.get(boss), sessionId, asOfUtc, calendarZone));
 		}
 		return new ProfileDashboard(summaries);
 	}
