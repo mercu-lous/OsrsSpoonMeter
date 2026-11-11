@@ -12,7 +12,7 @@ import net.runelite.api.ItemID;
 /** Versioned Maggot King conversion recipes; prices are supplied at loot capture time. */
 public final class MaggotKingConversionCatalog
 {
-	public static final String VERSION = "MAGGOT_KING_CONVERSIONS_V1";
+	public static final String VERSION = "MAGGOT_KING_CONVERSIONS_V2_ZERO_MISSING";
 	private static final Map<Integer, Recipe> RECIPES = recipes();
 
 	private MaggotKingConversionCatalog()
@@ -47,8 +47,9 @@ public final class MaggotKingConversionCatalog
 						.multiply(BigInteger.valueOf(recipe.weights[i])));
 				}
 			}
-			Long stackGp = complete ? stackValueInWholeGp(weightedPrice, quantity, recipe.denominator) : null;
-			return new ConversionQuote(recipe.method, stackGp, recipe.sourceUrl,
+			Long stackGp = complete ? stackValueInWholeGp(weightedPrice, quantity, recipe.denominator) : 0L;
+			return new ConversionQuote(complete ? recipe.method : "MISSING_CONVERSION_PRICE_ASSUMED_ZERO",
+				stackGp, recipe.sourceUrl,
 				priceSource, recipe.denominator, components);
 		}
 		if (itemId == ItemID.DULL_ANCIENT_MEDAL || itemId == ItemID.STYMPHIKE_TARTARE)
@@ -67,7 +68,9 @@ public final class MaggotKingConversionCatalog
 				return empty("OVERFLOW", priceSource);
 			}
 		}
-		return empty(tradeable ? "MISSING_DIRECT_PRICE" : "UNSUPPORTED_UNTRADEABLE", priceSource);
+		return new ConversionQuote(tradeable ? "MISSING_DIRECT_PRICE_ASSUMED_ZERO"
+			: "UNSUPPORTED_UNTRADEABLE_ASSUMED_ZERO", 0L, null,
+			priceSource, 1, Collections.emptyList());
 	}
 
 	private static Long stackValueInWholeGp(BigInteger weightedPrice, int quantity, int denominator)

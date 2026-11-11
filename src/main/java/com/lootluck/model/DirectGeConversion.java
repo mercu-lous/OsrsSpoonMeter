@@ -5,7 +5,7 @@ import java.util.Collections;
 /** Default valuation for bosses without verified item conversion recipes. */
 public final class DirectGeConversion
 {
-	public static final String VERSION = "DIRECT_GE_ONLY_V1";
+	public static final String VERSION = "DIRECT_GE_ONLY_V2_ZERO_MISSING";
 
 	private DirectGeConversion()
 	{
@@ -32,7 +32,7 @@ public final class DirectGeConversion
 						Collections.emptyList());
 			}
 		}
-		return new ConversionQuote(tradeable ? "MISSING_DIRECT_PRICE" : "NO_GE_CONVERSION",
-			tradeable ? null : 0L, null, priceSource, 1, Collections.emptyList());
+		return new ConversionQuote(tradeable ? "MISSING_DIRECT_PRICE_ASSUMED_ZERO" : "NO_GE_CONVERSION",
+			0L, null, priceSource, 1, Collections.emptyList());
 	}
 }

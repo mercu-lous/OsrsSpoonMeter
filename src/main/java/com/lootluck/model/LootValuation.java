@@ -3,14 +3,16 @@ package com.lootluck.model;
 import java.util.List;
 import net.runelite.api.gameval.ItemID;
 
-/** Returns no total when any price is unavailable or arithmetic overflows. */
+/** Valuation helpers; older saved null prices remain unavailable. */
 public final class LootValuation
 {
+	public static final String MISSING_PRICE_ASSUMED_ZERO = "MISSING_PRICE_ASSUMED_ZERO";
+
 	private LootValuation()
 	{
 	}
 
-	/** Keeps an unavailable price nullable and values coins at face value. */
+	/** New captured items without a direct price contribute zero; coins keep face value. */
 	public static Long directUnitGp(int itemId, long reportedPrice,
 		boolean untradeable, boolean geTradeable)
 	{
@@ -18,15 +20,22 @@ public final class LootValuation
 		{
 			return 1L;
 		}
-		if (reportedPrice > 0 && geTradeable)
-		{
-			return reportedPrice;
-		}
 		if (untradeable)
 		{
 			return 0L;
 		}
-		return null;
+		if (reportedPrice > 0 && geTradeable)
+		{
+			return reportedPrice;
+		}
+		return 0L;
+	}
+
+	public static boolean isMissingDirectPrice(int itemId, long reportedPrice,
+		boolean untradeable, boolean geTradeable)
+	{
+		return itemId != ItemID.COINS && !untradeable
+			&& !(reportedPrice > 0 && geTradeable);
 	}
 
 	public static Long totalGpIfComplete(List<LootItemPreview> items)

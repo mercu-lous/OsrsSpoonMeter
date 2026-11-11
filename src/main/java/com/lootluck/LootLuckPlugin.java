@@ -159,10 +159,12 @@ public class LootLuckPlugin extends Plugin
 			boolean untradeable = canonicalComposition != null && !canonicalComposition.isTradeable();
 			boolean geTradeable = canonicalComposition == null || canonicalComposition.isGeTradeable();
 			Long directUnitGp = LootValuation.directUnitGp(item.getId(), price, untradeable, geTradeable);
+			boolean assumedZero = LootValuation.isMissingDirectPrice(item.getId(), price,
+				untradeable, geTradeable);
 			int highAlchGp = composition == null ? 0 : composition.getHaPrice();
 			String priceSource = wikiPriceSetting ? "RUNELITE_WIKI_ADJUSTED" : "RUNELITE_JAGEX";
 			String itemPriceSource = item.getId() == ItemID.COINS ? "CURRENCY_FACE_VALUE"
-				: directUnitGp == null ? "UNAVAILABLE"
+				: assumedZero ? LootValuation.MISSING_PRICE_ASSUMED_ZERO
 				: untradeable ? "UNTRADEABLE_NO_GE_SALE" : priceSource;
 			items.add(new LootItemPreview(item.getId(), item.getQuantity(),
 				name == null || name.isEmpty() ? "Item #" + item.getId() : name,

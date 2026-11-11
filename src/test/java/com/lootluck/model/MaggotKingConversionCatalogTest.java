@@ -4,7 +4,6 @@ import java.util.Arrays;
 import net.runelite.api.ItemID;
 import org.junit.Test;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
 
 public class MaggotKingConversionCatalogTest
 {
@@ -26,7 +25,7 @@ public class MaggotKingConversionCatalogTest
 	}
 
 	@Test
-	public void weightsSpearOutputsAndPreservesMissingPrice()
+	public void weightsSpearOutputsAndMarksMissingOutputAsZero()
 	{
 		ConversionQuote quote = MaggotKingConversionCatalog.quote(ItemID.TARNISHED_SPEAR, 1,
 			0, false, outputId -> outputId == ItemID.RUNE_SPEAR ? 10000
@@ -38,9 +37,13 @@ public class MaggotKingConversionCatalogTest
 			1, 0, false, outputId -> outputId == ItemID.RUNE_SPEAR ? 11661
 				: outputId == ItemID.ADAMANT_SPEAR ? 757 : 234,
 			"RUNELITE_JAGEX").getStackGp());
-		assertNull(MaggotKingConversionCatalog.quote(ItemID.TARNISHED_SPEAR, 1, 0,
+		assertEquals(Long.valueOf(0), MaggotKingConversionCatalog.quote(ItemID.TARNISHED_SPEAR, 1, 0,
 			false, outputId -> outputId == ItemID.RUNE_SPEAR ? 0 : 1000,
 			"RUNELITE_JAGEX").getStackGp());
+		assertEquals("MISSING_CONVERSION_PRICE_ASSUMED_ZERO",
+			MaggotKingConversionCatalog.quote(ItemID.TARNISHED_SPEAR, 1, 0,
+				false, outputId -> outputId == ItemID.RUNE_SPEAR ? 0 : 1000,
+				"RUNELITE_JAGEX").getMethod());
 	}
 
 	@Test
@@ -58,20 +61,20 @@ public class MaggotKingConversionCatalogTest
 	}
 
 	@Test
-	public void distinguishesKnownZeroFromUnsupportedAndMissingPrices()
+	public void assumesZeroForUnsupportedAndMissingPrices()
 	{
 		assertEquals(Long.valueOf(0), MaggotKingConversionCatalog.quote(ItemID.DULL_ANCIENT_MEDAL,
 			1, 0, false, id -> 0, "RUNELITE_JAGEX").getStackGp());
-		assertNull(MaggotKingConversionCatalog.quote(999999, 1, 0, false,
+		assertEquals(Long.valueOf(0), MaggotKingConversionCatalog.quote(999999, 1, 0, false,
 			id -> 0, "RUNELITE_JAGEX").getStackGp());
-		assertNull(MaggotKingConversionCatalog.quote(999998, 1, 0, true,
+		assertEquals(Long.valueOf(0), MaggotKingConversionCatalog.quote(999998, 1, 0, true,
 			id -> 0, "RUNELITE_JAGEX").getStackGp());
 		assertEquals(Long.valueOf(1500), MaggotKingConversionCatalog.quote(450, 3, 500,
 			true, id -> 0, "RUNELITE_JAGEX").getStackGp());
 	}
 
 	@Test
-	public void refusesPartialAfterConversionTotals()
+	public void keepsPricedItemsWhenAnotherItemHasUnknownConversion()
 	{
 		ConversionQuote medal = MaggotKingConversionCatalog.quote(ItemID.DULL_ANCIENT_MEDAL,
 			1, 0, false, id -> 0, "RUNELITE_JAGEX");
@@ -85,6 +88,6 @@ public class MaggotKingConversionCatalogTest
 		LootItemPreview unknown = new LootItemPreview(999999, 1, "Unknown", 0L,
 			"UNTRADEABLE_NO_GE_SALE", null, MaggotKingConversionCatalog.quote(999999, 1,
 				0, false, id -> 0, "RUNELITE_JAGEX"));
-		assertNull(LootValuation.totalConvertedGpIfComplete(Arrays.asList(first, unknown)));
+		assertEquals(Long.valueOf(1000), LootValuation.totalConvertedGpIfComplete(Arrays.asList(second, unknown)));
 	}
 }

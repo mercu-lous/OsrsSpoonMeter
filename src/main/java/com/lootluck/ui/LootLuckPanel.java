@@ -688,7 +688,7 @@ public final class LootLuckPanel extends PluginPanel
 		{
 			text.append("\nCaptured rewards use the fixed Wiki baseline; manual rewards use entered expected GP. Prices and untradeable conversions are not updated.");
 		}
-		text.append("\nCaptured loot callbacks are grouped within five seconds; not confirmed kill count.\n");
+		text.append("\nUnpriced captured items count as 0 GP. Captured callbacks are grouped within five seconds; not confirmed kill count.\n");
 		if (scope.isCalendar())
 		{
 			text.append("Time zone: ").append(rewardSummary.getCalendarZone().getId())
@@ -813,14 +813,22 @@ public final class LootLuckPanel extends PluginPanel
 				{
 					text.append(item.getQuantity()).append(" × ").append(item.getName())
 						.append(" (#").append(item.getItemId()).append(')');
-					text.append(item.getUnitPriceGp() == null ? " @ direct price unavailable"
-						: " @ " + gp(item.getUnitPriceGp()) + " direct each").append('\n');
+					if (LootValuation.MISSING_PRICE_ASSUMED_ZERO.equals(item.getPriceSource()))
+					{
+						text.append(" @ 0 GP direct each (missing price assumed zero)\n");
+					}
+					else
+					{
+						text.append(item.getUnitPriceGp() == null ? " @ direct price unavailable"
+							: " @ " + gp(item.getUnitPriceGp()) + " direct each").append('\n');
+					}
 					ConversionQuote quote = item.getConversionQuote();
 					if (quote != null && quote.getStackGp() != null
 						&& !"DIRECT_GE".equals(quote.getMethod())
-						&& !"NO_GE_CONVERSION".equals(quote.getMethod()))
+						&& !"NO_GE_CONVERSION".equals(quote.getMethod())
+						&& !"MISSING_DIRECT_PRICE_ASSUMED_ZERO".equals(quote.getMethod()))
 					{
-						text.append("  After conversion: ").append(gp(quote.getStackGp())).append('\n');
+						text.append("  ").append(conversionLabel(quote)).append('\n');
 					}
 				}
 				if (event.getItems().isEmpty())
@@ -933,6 +941,7 @@ public final class LootLuckPanel extends PluginPanel
 				}
 			}
 			boolean hasUntradeable = false;
+			boolean hasAssumedZero = false;
 			for (LootItemPreview item : observation.getItems())
 			{
 				text.append(item.getQuantity()).append(" × ").append(item.getName());
@@ -949,6 +958,11 @@ public final class LootLuckPanel extends PluginPanel
 						text.append("; HA ").append(gp(item.getHighAlchGp()));
 					}
 				}
+				else if (LootValuation.MISSING_PRICE_ASSUMED_ZERO.equals(item.getPriceSource()))
+				{
+					hasAssumedZero = true;
+					text.append(" @ 0 GP (missing price assumed zero)");
+				}
 				else
 				{
 					text.append(" @ ").append(item.getUnitPriceGp() == null ? "price unavailable" : gp(item.getUnitPriceGp()) + " each");
@@ -957,7 +971,8 @@ public final class LootLuckPanel extends PluginPanel
 				ConversionQuote quote = item.getConversionQuote();
 				if (quote != null && !"DIRECT_GE".equals(quote.getMethod())
 					&& !"NO_GE_CONVERSION".equals(quote.getMethod())
-					&& !"MISSING_DIRECT_PRICE".equals(quote.getMethod()))
+					&& !"MISSING_DIRECT_PRICE".equals(quote.getMethod())
+					&& !"MISSING_DIRECT_PRICE_ASSUMED_ZERO".equals(quote.getMethod()))
 				{
 					text.append("  ").append(conversionLabel(quote)).append('\n');
 				}
@@ -965,6 +980,10 @@ public final class LootLuckPanel extends PluginPanel
 			if (hasUntradeable)
 			{
 				text.append("\nUntradeable items count as 0 direct GE GP. HA and conversion estimates are shown separately.\n");
+			}
+			if (hasAssumedZero)
+			{
+				text.append("\nMissing direct prices were counted as 0 GP in this estimate.\n");
 			}
 			if (boss == BossRegistry.MAGGOT_KING)
 			{
@@ -1065,6 +1084,10 @@ public final class LootLuckPanel extends PluginPanel
 				return "After etching (84 Crafting): " + gp(value);
 			case "SQUEEZE_50_SACS_TO_VIAL":
 				return "After squeezing (50 sacs/vial): " + gp(value);
+			case "MISSING_CONVERSION_PRICE_ASSUMED_ZERO":
+				return "Conversion value: 0 GP (missing output price assumed zero)";
+			case "UNSUPPORTED_UNTRADEABLE_ASSUMED_ZERO":
+				return "After conversion: 0 GP (unsupported; assumed zero)";
 			default:
 				return "After conversion: " + gp(value);
 		}
