@@ -3,6 +3,7 @@ package com.lootluck.ui;
 import com.lootluck.model.LootEventPreview;
 import com.lootluck.model.BossDefinition;
 import com.lootluck.model.BossRegistry;
+import com.lootluck.model.BossRankingEntry;
 import com.lootluck.model.ProfileDashboard;
 import com.lootluck.model.LootItemPreview;
 import com.lootluck.model.LootValuation;
@@ -45,6 +46,7 @@ public final class LootLuckPanel extends PluginPanel
 	private static final Color BELOW_EXPECTED = new Color(255, 154, 145);
 	private final JTextPane overviewText = new JTextPane();
 	private final JTextArea historyText = new JTextArea();
+	private final JTextArea rankingsText = new JTextArea();
 	private final JComboBox<BossDefinition> bossSelector = new JComboBox<>(
 		BossRegistry.bosses().toArray(new BossDefinition[0]));
 	private final JComboBox<RewardScope> statisticsScope = new JComboBox<>(RewardScope.values());
@@ -73,6 +75,7 @@ public final class LootLuckPanel extends PluginPanel
 		statisticsScope.addActionListener(event -> {
 			renderStatistics();
 			renderHistory();
+			renderRankings();
 		});
 		header.add(statisticsScope);
 		add(header, BorderLayout.NORTH);
@@ -86,9 +89,15 @@ public final class LootLuckPanel extends PluginPanel
 		historyText.setWrapStyleWord(true);
 		historyText.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
 		historyText.setText("Loading saved observations...");
+		rankingsText.setEditable(false);
+		rankingsText.setLineWrap(true);
+		rankingsText.setWrapStyleWord(true);
+		rankingsText.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+		rankingsText.setText("Loading boss rankings...");
 		JTabbedPane tabs = new JTabbedPane();
 		tabs.addTab("Overview", new JScrollPane(overviewText));
 		tabs.addTab("History", new JScrollPane(historyText));
+		tabs.addTab("Rankings", new JScrollPane(rankingsText));
 		add(tabs, BorderLayout.CENTER);
 	}
 
@@ -102,6 +111,7 @@ public final class LootLuckPanel extends PluginPanel
 			statisticsStatus = "Loading reward summary...";
 			renderStatistics();
 			renderHistory();
+			renderRankings();
 		});
 	}
 
@@ -190,6 +200,7 @@ public final class LootLuckPanel extends PluginPanel
 			dashboard = summary;
 			renderStatistics();
 			renderHistory();
+			renderRankings();
 		});
 	}
 
@@ -200,6 +211,7 @@ public final class LootLuckPanel extends PluginPanel
 			statisticsStatus = "Reward summary unavailable; check RuneLite log.";
 			renderStatistics();
 			renderHistory();
+			renderRankings();
 		});
 	}
 
@@ -391,6 +403,44 @@ public final class LootLuckPanel extends PluginPanel
 		}
 		historyText.setText(text.toString());
 		historyText.setCaretPosition(0);
+	}
+
+	private void renderRankings()
+	{
+		if (dashboard == null)
+		{
+			rankingsText.setText(statisticsStatus);
+			return;
+		}
+		RewardScope scope = (RewardScope) statisticsScope.getSelectedItem();
+		if (scope == null)
+		{
+			scope = RewardScope.ALL_TIME;
+		}
+		StringBuilder text = new StringBuilder("Boss GP ranking — ")
+			.append(scope).append("\n\n");
+		java.util.List<BossRankingEntry> rankings = dashboard.getRankings(scope);
+		if (rankings.isEmpty())
+		{
+			text.append("No comparable rewards in this view.\n");
+		}
+		for (int i = 0; i < rankings.size(); i++)
+		{
+			BossRankingEntry ranking = rankings.get(i);
+			RewardStatistics stats = ranking.getStatistics();
+			text.append(i + 1).append(". ").append(ranking.getBoss().getName())
+				.append("  ").append(signedPercent(ranking.getPercentVsExpected())).append('\n');
+			text.append("   ").append(stats.getValuedNormalRewards())
+				.append(" valued reward groups\n");
+			text.append("   ").append(signedGp(stats.getNetLuckGp()))
+				.append(" vs expected\n");
+			text.append("   ").append(ranking.getBoss() == BossRegistry.MAGGOT_KING
+				? "Versioned drop table" : "Fixed Wiki baseline").append("\n\n");
+		}
+		text.append("Ranked by GP percentage for rewards with saved expected values. "
+			+ "Small samples can swing widely. This is not a rare-drop percentile or confirmed kill ranking.");
+		rankingsText.setText(text.toString());
+		rankingsText.setCaretPosition(0);
 	}
 
 	public void showObservation(LootEventPreview observation, boolean showItemIds,

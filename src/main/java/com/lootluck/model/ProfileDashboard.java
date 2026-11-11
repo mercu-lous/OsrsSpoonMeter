@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -53,5 +54,22 @@ public final class ProfileDashboard
 	public RewardSummary get(BossDefinition boss)
 	{
 		return summaries.get(boss);
+	}
+
+	/** Ranked by GP percentage versus the matched expected value in this scope. */
+	public List<BossRankingEntry> getRankings(RewardScope scope)
+	{
+		List<BossRankingEntry> rankings = new ArrayList<>();
+		for (Map.Entry<BossDefinition, RewardSummary> entry : summaries.entrySet())
+		{
+			RewardStatistics statistics = entry.getValue().get(scope);
+			if (statistics.getValuedNormalRewards() > 0 && statistics.getPercentVsExpected() != null)
+			{
+				rankings.add(new BossRankingEntry(entry.getKey(), statistics));
+			}
+		}
+		rankings.sort(Comparator.comparing(BossRankingEntry::getPercentVsExpected).reversed()
+			.thenComparing(ranking -> ranking.getBoss().getName()));
+		return Collections.unmodifiableList(rankings);
 	}
 }
