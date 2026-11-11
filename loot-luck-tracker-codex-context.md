@@ -2,6 +2,60 @@
 
 > **Purpose:** Paste this document into a Codex workspace or keep it as `PROJECT_CONTEXT.md` in the repository. It captures the product requirements, technical design intentions, implementation order, and caveats discussed with ChatGPT. It is a planning brief, **not** an assertion that code or dependencies have already been implemented.
 
+## Current direction and priority order — November 11, 2026
+
+**Product direction:** Make Loot Luck Tracker an analytics tool first. Live capture continues to supply data, but the default experience should emphasize boss totals, expected GP, actual GP, and the resulting GP difference. Store itemized captures for later analysis; show item details only when the user expands them or enables a setting. This priority order supersedes the original milestone order in section 5. The original requirements remain a longer-term reference.
+
+**Current starting point:** A local development plugin already saves itemized loot, supports Maggot King, Vorkath, Zulrah, Corrupted Gauntlet, and regular Gauntlet, and shows time scopes, GP comparisons, Rankings, reversible edits, and manual rewards. Captured reward groups are provisional observations, while manual entries can add explicit kills. There is no unified confirmed kill count, aggregate Loot Tracker baseline, item-filter analysis, or published release yet.
+
+### Priority 1 — Starting totals and manual customization
+
+1. Add a prominent **Set starting totals** flow for a selected boss and profile. The user reads their existing RuneLite Loot Tracker and enters its cumulative kill count and gross loot GP. Show the boss's expected GP per kill, the resulting expected total, actual minus expected, and percentage **before saving**. Allow a user override of expected GP per kill, labeled with its source and effective date. Label the entered GP as a user-provided Loot Tracker total because its valuation convention may differ from newly captured direct-GE values.
+2. Save a versioned **baseline anchor** containing boss, profile, cumulative kills, cumulative actual GP, expected GP per kill, effective time, and provenance such as “entered from RuneLite Loot Tracker.” An anchor represents a total through that time, not invented individual drops. Continue storing actual captured itemized rewards separately.
+3. Prevent overlap: a baseline entered from an existing Loot Tracker total may already include rewards this plugin captured. Preview which captured and manual records fall before the anchor and would be excluded from the new aggregate. Add only subsequent eligible rewards and manual adjustments to the anchor. Preserve old records for History; never silently delete or double count them.
+4. Let the user replace/correct a baseline and review what changed. Keep earlier values recoverable, make exclusions reversible, and distinguish **starting kills**, **manual kills added**, and **provisional kills from loot** in the UI. Decide the boss-specific rule for when a loot group can increase provisional kills; a loot callback alone is not universally a confirmed kill.
+5. Keep the default History view compact: date, boss, actual GP, expected GP, and difference. Offer expandable item stacks and captured pricing details for analysis or diagnosis.
+
+**Done when:** The user can enter the totals visible in RuneLite Loot Tracker without re-entering each drop, see an accurate new starting point, restart the client, and see later rewards added exactly once. The UI clearly labels which kills are entered, provisional, or confirmed.
+
+**Access question to resolve during implementation:** Check whether a supported RuneLite API can read existing Loot Tracker history. Manual transcription of visible totals is the reliable first path; do not depend on private storage or reflection. A later importer may offer preview and deduplication if supported access exists.
+
+### Priority 2 — Readable, useful sidebar
+
+1. Investigate RuneLite's supported sidebar sizing behavior and aim for roughly **50% more width**. If the host controls the width, use a layout that remains readable at the available size rather than relying on an unsupported client change.
+2. Put the selected boss and time range above a compact summary: total kills and their confidence, actual GP, expected GP, GP difference, and GP percentage. Make the starting-totals action easy to find.
+3. Use restrained color and visual hierarchy: green for positive GP difference, red for negative, and neutral colors for context. Keep signs and text labels so color is not the only signal. Show the expected-value source and whether a comparison is provisional.
+4. Keep Overview, Rankings, History, and editing easy to reach. Collapse detailed item lists by default. Check scrolling, text wrapping, and form sizes in a narrow and expanded sidebar.
+
+**Done when:** A player can read their overall actual-versus-expected result and change boss or time range without hunting through itemized event text.
+
+### Priority 3 — Broader boss catalog and user-defined bosses
+
+1. Prioritize **Yama, Nex, Doom, Nightmare, Duke, Vard, Muspah, Leviathan, and Whisperer**. Verify each official boss name, RuneLite `LootReceived` source name or names, variants, and a dated expected **gross GP per eligible kill** before adding a comparison. Keep values, citations, and versions in the local catalog; old saved expectations remain frozen. A capture-only state is acceptable while an expectation is unverified.
+2. Reuse the generic capture, grouping, valuation, baseline, and analytics path. A simple boss normally needs a definition, source aliases, and expected GP per kill. Some bosses may also need a rule for modes, player share, multiple rewards, no-loot outcomes, or completion evidence; record only the exceptions that matter for accurate totals.
+3. Add a **Custom boss** form for display name, expected GP per kill, and one or more loot-source aliases. Where practical, offer recently observed unknown loot-source names to select rather than guessing the source from a display name. Let the user edit or override a built-in boss's expected GP for future observations, with a clear custom label and versioned snapshot.
+4. Check a normal reward for each new boss during ordinary play when available; do not require rare drops or delay the catalog on boss-specific edge cases. Use fixtures for source mapping, persistence, and baseline arithmetic.
+
+**Done when:** The requested bosses can appear in totals and GP Rankings when their sources and expectations are known, and a user can configure another boss without editing Java code.
+
+### Priority 4 — Analysis and data manipulation
+
+1. Define the session clock, then show **GP per elapsed session hour** with the time basis labeled. Do not imply combat-only GP/hour from plugin uptime. Add a manual or automatic session boundary only after its behavior is clear.
+2. Add charts of cumulative actual GP, expected GP, and GP difference over time. Let the user choose boss and time range; show baseline anchors as separate starting points rather than fabricated historical kills.
+3. Add item-ID-based value filters: include or exclude selected items from an analysis view, and calculate how much a chosen boss yielded from a selected item, such as Vorkath's superior dragon bones. Preserve raw captures and provide a reset to the unfiltered result. Aggregate baselines without item detail cannot be retroactively item-filtered.
+4. Expand Rankings with luckiest/unluckiest ordering by GP difference and GP percentage, a minimum sample size, and per-kill metrics only where the kill denominator is explicit. Distinguish **GP above expectation** from statistical rare-drop luck, which would require drop probabilities and its own model.
+5. Add export/backup of anchors, manual entries, and captured records before advanced imports or migrations.
+
+**Done when:** The user can explore when GP was earned, which items contributed, and which bosses are above or below expectation without changing saved historical data.
+
+### Priority 5 — Share and publish
+
+1. Prepare a friend-test build with setup instructions, an example data backup, and a clear description of what the statistics do and do not mean.
+2. Before a public release, check current RuneLite Plugin Hub requirements, supported APIs, dependency/network policy, metadata, privacy, and data migration behavior. Verify ordinary boss capture, profile separation, restarts, and recovery from malformed or older files.
+3. Submit/publish only after the build and release materials are reviewable and the user approves that concrete release. Preserve a local development path for future updates.
+
+**Done when:** Friends can install and use the plugin with their own saved data, and a public release has passed the relevant review process.
+
 ## 1. Project summary
 
 **Working name:** Loot Luck Tracker (alternative: Spoon Meter)  
@@ -187,7 +241,9 @@ Prefer immutable or effectively immutable event records. Use `long` for GP and q
 
 The example values are intentionally fake, for demonstrating shape only. Real event IDs, account keys, enum values, and pricing need implementation.
 
-## 5. Milestones and definition of done
+## 5. Original milestones and definition of done
+
+This was the initial build order. Phases 1–3 and parts of 4–5 are implemented in the local prototype. Follow the **Current direction and priority order** at the top of this document for new work.
 
 ### Phase 1 — Local development setup
 
@@ -250,7 +306,9 @@ The example values are intentionally fake, for demonstrating shape only. Real ev
 
 **Done:** plugin is robust, testable, and ready for formal submission review.
 
-## 6. Version 0.1 (MVP) checklist
+## 6. Original version 0.1 (MVP) checklist
+
+This is the original planning checklist, not a live status report. See the README for verified implementation status.
 
 - [ ] Build and run a RuneLite plugin locally.
 - [ ] Show a sidebar UI panel.
@@ -279,8 +337,8 @@ These are intentionally **unresolved** and should be researched or decided durin
 9. Which boss variants/modes deserve separate leaderboard entries.
 10. How to handle old baseline imports if item prices or EV assumptions are unavailable.
 
-## 8. Instructions to Codex — first action
+## 8. Original instructions to Codex — first action (completed)
 
-**Please treat this file as the product requirements and project handoff.** Start with Phase 1, not the whole roadmap. Inspect the current RuneLite example plugin and confirm the active JDK/Gradle/plugin APIs. Scaffold a clean, compiling local RuneLite plugin named **Loot Luck Tracker** with a panel and config, using the actual current template conventions. Keep architectural seams for event storage, EV, analytics, and UI, but do not overbuild yet. Add a brief README for running locally and state what was verified versus stubbed. Then proceed to event capture in small, testable increments.
+The original handoff requested a compiling local plugin with a sidebar, README, and small increments toward event capture. That setup is complete. Follow the current priority order at the top of this document for future development.
 
 **User development preference:** They are comfortable with Java and software engineering; explain key architecture decisions but prioritize practical code, local setup, and a runnable prototype.
