@@ -6,6 +6,8 @@ import com.lootluck.model.ConversionQuote;
 import com.lootluck.model.DirectGeConversion;
 import com.lootluck.model.BossRegistry;
 import com.lootluck.model.ExpectedValueSnapshot;
+import com.lootluck.model.GauntletOutcome;
+import com.lootluck.model.RewardStatistics;
 import com.lootluck.model.MaggotKingConversionCatalog;
 import com.lootluck.model.MaggotKingExpectedValueService;
 import com.lootluck.model.LootItemPreview;
@@ -50,7 +52,7 @@ public class LootEventCodecTest
 		assertEquals(event.getObservedAtUtc(), restored.getObservedAtUtc());
 		assertEquals("Maggot King", restored.getSource());
 		assertEquals("NPC", restored.getEventType());
-		assertTrue(json.contains("\"schemaVersion\":7"));
+		assertTrue(json.contains("\"schemaVersion\":8"));
 		assertTrue(json.contains("\"attributionStatus\":\"UNATTRIBUTED\""));
 		assertTrue(json.contains("\"valuationStatus\":\"COMPLETE\""));
 		assertTrue(json.contains("\"valuationMethod\":\"RUNELITE_DIRECT_GE_UNTRADEABLE_ZERO_V1\""));
@@ -87,11 +89,39 @@ public class LootEventCodecTest
 			Arrays.asList(new LootItemPreview(450, 1, "Test", 100L, "RUNELITE_JAGEX",
 				null, new ConversionQuote("DIRECT_GE", 100L, null, "RUNELITE_JAGEX", 1,
 					java.util.Collections.emptyList()))), null,
-			BossRegistry.GAUNTLET.getRules().expected(null, id -> 1L, "RUNELITE_JAGEX", observedAt));
+			BossRegistry.GAUNTLET.getRules().expected(null, id -> 1L, "RUNELITE_JAGEX", observedAt),
+			GauntletOutcome.COMPLETED);
 		SavedLootEvent restored = codec.decode(codec.encode(event));
 		assertEquals(Long.valueOf(150815), restored.getExpectedSnapshot().getExpectedGp());
 		assertEquals(null, restored.getRewardClick());
 		assertEquals("Crystalline Hunllef", restored.getSource());
+		assertEquals(GauntletOutcome.COMPLETED, restored.getGauntletOutcome());
+	}
+
+	@Test
+	public void readsOldFailedGauntletRewardWithoutApplyingCompletionAverage()
+	{
+		Instant observedAt = Instant.parse("2026-11-11T00:53:39Z");
+		ConversionQuote conversion = new ConversionQuote("DIRECT_GE", 1170L,
+			null, "RUNELITE_JAGEX", 1, java.util.Collections.emptyList());
+		SavedLootEvent event = new SavedLootEvent("a798a7a2-7b4b-4d82-8e2b-d16a42db942b",
+			ProfileIds.fromRuneScapeProfileKey("account-one"), "session-1", observedAt,
+			"Corrupted Hunllef", "NPC", 0, 1, 42,
+			java.util.Collections.singletonList(new LootItemPreview(854, 10,
+				"Maple shortbow", 117L, "RUNELITE_JAGEX", null, conversion)), null,
+			BossRegistry.CORRUPTED_GAUNTLET.getRules().expected(null, id -> 1L,
+				"RUNELITE_JAGEX", observedAt), GauntletOutcome.PARTIAL);
+		String oldJson = codec.encode(event).replace("\"schemaVersion\":8", "\"schemaVersion\":7")
+			.replace("\"gauntletOutcome\":\"PARTIAL\",", "");
+		SavedLootEvent restored = codec.decode(oldJson);
+		assertEquals(GauntletOutcome.PARTIAL, restored.getGauntletOutcome());
+		assertEquals(Long.valueOf(550380), restored.getExpectedSnapshot().getExpectedGp());
+		RewardStatistics stats = RewardStatistics.summarize(java.util.Collections.singletonList(restored));
+		assertEquals(1, stats.getObservedLootRewards());
+		assertEquals(1, stats.getPartialGauntletRewards());
+		assertEquals(0, stats.getPricedNormalRewards());
+		assertEquals(0, stats.getValuedNormalRewards());
+		assertEquals(null, stats.getNetLuckGp());
 	}
 
 	@Test
@@ -155,7 +185,7 @@ public class LootEventCodecTest
 		assertEquals(3, restored.getItems().get(0).getConversionQuote().getComponents().size());
 		assertEquals(Long.valueOf(10000), restored.getItems().get(0).getConversionQuote()
 			.getComponents().get(0).getUnitPriceGp());
-		assertEquals(null, codec.decode(json.replace("\"schemaVersion\":7", "\"schemaVersion\":5"))
+		assertEquals(null, codec.decode(json.replace("\"schemaVersion\":8", "\"schemaVersion\":5"))
 			.getConvertedGp());
 	}
 
@@ -193,7 +223,7 @@ public class LootEventCodecTest
 		assertTrue(json.contains("\"rewardMethod\":\"OPEN_STOMACH\""));
 		assertEquals(click.getClickId(), codec.decode(json).getRewardClick().getClickId());
 		assertEquals(339, codec.decode(json).getRewardClick().getClientTick());
-		assertEquals(click.getClickId(), codec.decode(json.replace("\"schemaVersion\":7", "\"schemaVersion\":4"))
+		assertEquals(click.getClickId(), codec.decode(json.replace("\"schemaVersion\":8", "\"schemaVersion\":4"))
 			.getRewardClick().getClickId());
 	}
 
@@ -220,14 +250,14 @@ public class LootEventCodecTest
 		SavedLootEvent restored = codec.decode(json);
 		assertEquals(Long.valueOf(489466), restored.getExpectedSnapshot().getExpectedGp());
 		assertEquals(Long.valueOf(123456789), restored.getExpectedSnapshot().getInputPrices().get(33636));
-		assertEquals(null, codec.decode(json.replace("\"schemaVersion\":7", "\"schemaVersion\":6"))
+		assertEquals(null, codec.decode(json.replace("\"schemaVersion\":8", "\"schemaVersion\":6"))
 			.getExpectedSnapshot());
 	}
 
 	@Test(expected = IllegalArgumentException.class)
 	public void rejectsUnknownSchema()
 	{
-		codec.decode("{\"schemaVersion\":8}");
+		codec.decode("{\"schemaVersion\":9}");
 	}
 
 	@Test

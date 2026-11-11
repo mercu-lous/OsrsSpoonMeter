@@ -21,6 +21,7 @@ public final class SavedLootEvent
 	private final List<LootItemPreview> items;
 	private final RewardClickCandidate rewardClick;
 	private final ExpectedValueSnapshot expectedSnapshot;
+	private final GauntletOutcome gauntletOutcome;
 
 	public SavedLootEvent(String eventId, String profileId, String sessionId, Instant observedAtUtc,
 		String source, String eventType, int combatLevel, int reportedAmount, int clientTick,
@@ -43,6 +44,16 @@ public final class SavedLootEvent
 		List<LootItemPreview> items, RewardClickCandidate rewardClick,
 		ExpectedValueSnapshot expectedSnapshot)
 	{
+		this(eventId, profileId, sessionId, observedAtUtc, source, eventType, combatLevel,
+			reportedAmount, clientTick, items, rewardClick, expectedSnapshot,
+			GauntletOutcome.fromLegacy(source, items));
+	}
+
+	public SavedLootEvent(String eventId, String profileId, String sessionId, Instant observedAtUtc,
+		String source, String eventType, int combatLevel, int reportedAmount, int clientTick,
+		List<LootItemPreview> items, RewardClickCandidate rewardClick,
+		ExpectedValueSnapshot expectedSnapshot, GauntletOutcome gauntletOutcome)
+	{
 		this.eventId = Objects.requireNonNull(eventId);
 		this.profileId = Objects.requireNonNull(profileId);
 		this.sessionId = Objects.requireNonNull(sessionId);
@@ -59,6 +70,13 @@ public final class SavedLootEvent
 		}
 		this.rewardClick = rewardClick;
 		this.expectedSnapshot = expectedSnapshot;
+		this.gauntletOutcome = Objects.requireNonNull(gauntletOutcome);
+		boolean gauntlet = GauntletOutcome.isGauntlet(BossRegistry.findBySource(source));
+		if ((gauntlet && gauntletOutcome == GauntletOutcome.NOT_APPLICABLE)
+			|| (!gauntlet && gauntletOutcome != GauntletOutcome.NOT_APPLICABLE))
+		{
+			throw new IllegalArgumentException("Gauntlet outcome does not match loot source");
+		}
 	}
 
 	public String getEventId() { return eventId; }
@@ -73,6 +91,7 @@ public final class SavedLootEvent
 	public List<LootItemPreview> getItems() { return items; }
 	public RewardClickCandidate getRewardClick() { return rewardClick; }
 	public ExpectedValueSnapshot getExpectedSnapshot() { return expectedSnapshot; }
+	public GauntletOutcome getGauntletOutcome() { return gauntletOutcome; }
 	public Long getActualGp() { return LootValuation.totalGpIfComplete(items); }
 	public Long getConvertedGp() { return LootValuation.totalConvertedGpIfComplete(items); }
 }

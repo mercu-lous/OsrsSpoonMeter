@@ -55,6 +55,9 @@ public class BossRankingTest
 		return new SavedLootEvent(UUID.nameUUIDFromBytes(name.getBytes(StandardCharsets.UTF_8)).toString(),
 			PROFILE, session, time, source, "NPC", 0, 1, 102,
 			Collections.singletonList(new LootItemPreview(450, 1, "Test", actualGp,
-				"RUNELITE_JAGEX", null, quote)), null, expected);
+				"RUNELITE_JAGEX", null, quote)), null, expected,
+			GauntletOutcome.isGauntlet(BossRegistry.findBySource(source))
+				? expected == null ? GauntletOutcome.UNKNOWN : GauntletOutcome.COMPLETED
+				: GauntletOutcome.NOT_APPLICABLE);
 	}
 }

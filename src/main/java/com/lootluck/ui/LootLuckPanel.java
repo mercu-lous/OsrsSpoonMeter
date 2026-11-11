@@ -10,6 +10,7 @@ import com.lootluck.model.LootValuation;
 import com.lootluck.model.ConversionQuote;
 import com.lootluck.model.ExpectedValueSnapshot;
 import com.lootluck.model.FixedExpectedBossRules;
+import com.lootluck.model.GauntletOutcome;
 import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.RewardHistoryEntry;
 import com.lootluck.model.RewardScope;
@@ -237,10 +238,20 @@ public final class LootLuckPanel extends PluginPanel
 		latestDeltaGp = stats.getLastRewardDeltaGp();
 		StringBuilder text = new StringBuilder();
 		text.append("\nObserved loot reward groups: ").append(stats.getObservedLootRewards());
+		if (GauntletOutcome.isGauntlet(boss))
+		{
+			text.append("\nPartial-completion chests: ").append(stats.getPartialGauntletRewards());
+			text.append("\nOutcome unverified: ").append(stats.getUnclassifiedGauntletRewards());
+		}
 		if (stats.getPricedNormalRewards() > 0)
 		{
-			text.append("\nPriced non-egg rewards: ").append(stats.getPricedNormalRewards())
-				.append(" / ").append(stats.getObservedNormalRewards());
+			text.append(GauntletOutcome.isGauntlet(boss)
+				? "\nPriced completed rewards: " : "\nPriced non-egg rewards: ")
+				.append(stats.getPricedNormalRewards());
+			if (!GauntletOutcome.isGauntlet(boss))
+			{
+				text.append(" / ").append(stats.getObservedNormalRewards());
+			}
 			text.append("\nGP per priced reward: ")
 				.append(stats.getAverageGpPerPricedReward() == null
 					? "Unavailable" : gp(stats.getAverageGpPerPricedReward()));
@@ -277,7 +288,9 @@ public final class LootLuckPanel extends PluginPanel
 		}
 		else if (boss != BossRegistry.MAGGOT_KING)
 		{
-			text.append("\nGP comparison unavailable for an incomplete reward value.");
+			text.append(GauntletOutcome.isGauntlet(boss)
+				? "\nNo priced, completion-confirmed rewards available for GP comparison."
+				: "\nGP comparison unavailable for an incomplete reward value.");
 		}
 		if (boss != BossRegistry.MAGGOT_KING)
 		{
@@ -366,6 +379,10 @@ public final class LootLuckPanel extends PluginPanel
 			else
 			{
 				SavedLootEvent event = entry.getLootEvent();
+				if (GauntletOutcome.isGauntlet(selectedBoss()))
+				{
+					text.append(gauntletOutcomeLabel(event.getGauntletOutcome())).append('\n');
+				}
 				RewardClickCandidate click = event.getRewardClick();
 				text.append(click == null ? "Loot callback" :
 					"OPEN_STOMACH".equals(click.getMethod()) ? "Open-stomach timing link" : "Take-eggs timing link")
@@ -392,11 +409,17 @@ public final class LootLuckPanel extends PluginPanel
 					? "Unavailable" : gp(event.getActualGp())).append('\n');
 				text.append("Converted event value: ").append(event.getConvertedGp() == null
 					? "Unavailable" : gp(event.getConvertedGp())).append('\n');
-				if (event.getExpectedSnapshot() != null)
+				if (event.getExpectedSnapshot() != null
+					&& event.getGauntletOutcome() != GauntletOutcome.PARTIAL
+					&& event.getGauntletOutcome() != GauntletOutcome.UNKNOWN)
 				{
 					Long expectedGp = event.getExpectedSnapshot().getExpectedGp();
 					text.append("Expected for reward group: ")
 						.append(expectedGp == null ? "Unavailable" : gp(expectedGp)).append('\n');
+				}
+				else if (event.getExpectedSnapshot() != null)
+				{
+					text.append("Older expected snapshot ignored: completion not confirmed.\n");
 				}
 			}
 			text.append('\n');
@@ -444,7 +467,7 @@ public final class LootLuckPanel extends PluginPanel
 	}
 
 	public void showObservation(LootEventPreview observation, boolean showItemIds,
-		ExpectedValueSnapshot expected)
+		ExpectedValueSnapshot expected, GauntletOutcome gauntletOutcome)
 	{
 		SwingUtilities.invokeLater(() -> {
 			BossDefinition boss = BossRegistry.findBySource(observation.getSource());
@@ -454,6 +477,10 @@ public final class LootLuckPanel extends PluginPanel
 			text.append("Type: ").append(observation.getType()).append('\n');
 			text.append("Observed: ").append(TIME_FORMAT.withZone(ZoneId.systemDefault()).format(observation.getObservedAtUtc())).append('\n');
 			text.append("Item stacks: ").append(observation.getItems().size()).append('\n');
+			if (GauntletOutcome.isGauntlet(boss))
+			{
+				text.append(gauntletOutcomeLabel(gauntletOutcome)).append('\n');
+			}
 			Long actualGp = LootValuation.totalGpIfComplete(observation.getItems());
 			Long convertedGp = LootValuation.totalConvertedGpIfComplete(observation.getItems());
 			text.append("Direct GE sale estimate: ").append(actualGp == null ? "Unavailable (missing price)" : gp(actualGp)).append('\n');
@@ -518,7 +545,16 @@ public final class LootLuckPanel extends PluginPanel
 			}
 			else
 			{
-				text.append("\nDirect-only estimate uses captured RuneLite prices. The fixed expected GP estimate may drift as prices change. Reward groups are provisional, not confirmed kill count.");
+				text.append("\nDirect-only estimate uses captured RuneLite prices. ");
+				if (GauntletOutcome.isGauntlet(boss) && gauntletOutcome != GauntletOutcome.COMPLETED)
+				{
+					text.append("Completion-average GP comparison is excluded for this chest. ");
+				}
+				else
+				{
+					text.append("The fixed expected GP estimate may drift as prices change. ");
+				}
+				text.append("Reward groups are provisional, not confirmed kill count.");
 			}
 			if (boss != null)
 			{
@@ -529,6 +565,19 @@ public final class LootLuckPanel extends PluginPanel
 			renderOverview();
 			overviewText.setCaretPosition(0);
 		});
+	}
+
+	private static String gauntletOutcomeLabel(GauntletOutcome outcome)
+	{
+		switch (outcome)
+		{
+			case COMPLETED:
+				return "Gauntlet completion: confirmed by game counter";
+			case PARTIAL:
+				return "Gauntlet completion: partial reward (failed run)";
+			default:
+				return "Gauntlet completion: unverified";
+		}
 	}
 
 	private BossDefinition selectedBoss()

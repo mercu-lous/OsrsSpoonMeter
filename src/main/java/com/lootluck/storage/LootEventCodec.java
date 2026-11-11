@@ -9,6 +9,7 @@ import com.lootluck.model.LootItemPreview;
 import com.lootluck.model.ConversionComponent;
 import com.lootluck.model.ConversionQuote;
 import com.lootluck.model.ExpectedValueSnapshot;
+import com.lootluck.model.GauntletOutcome;
 import com.lootluck.model.BossDefinition;
 import com.lootluck.model.BossRegistry;
 import com.lootluck.model.RewardClickCandidate;
@@ -23,7 +24,7 @@ import java.util.UUID;
 /** Explicit versioned JSON avoids serializing RuneLite or JDK internals. */
 public final class LootEventCodec
 {
-	public static final int SCHEMA_VERSION = 7;
+	public static final int SCHEMA_VERSION = 8;
 	private final Gson gson;
 
 	public LootEventCodec(Gson gson)
@@ -44,6 +45,7 @@ public final class LootEventCodec
 		root.addProperty("combatLevel", event.getCombatLevel());
 		root.addProperty("reportedAmount", event.getReportedAmount());
 		root.addProperty("clientTick", event.getClientTick());
+		root.addProperty("gauntletOutcome", event.getGauntletOutcome().name());
 		RewardClickCandidate click = event.getRewardClick();
 		root.addProperty("attributionStatus", click == null ? "UNATTRIBUTED" : "CLICK_CORRELATED_UNCONFIRMED");
 		root.addProperty("rewardMethod", click == null ? "UNKNOWN" : click.getMethod());
@@ -171,11 +173,15 @@ public final class LootEventCodec
 				requiredString(root, "expectedPriceSource"),
 				Instant.parse(requiredString(root, "expectedCapturedAtUtc")), inputPrices);
 		}
+		String source = requiredString(root, "source");
+		GauntletOutcome gauntletOutcome = version >= 8
+			? GauntletOutcome.valueOf(requiredString(root, "gauntletOutcome"))
+			: GauntletOutcome.fromLegacy(source, items);
 		SavedLootEvent event = new SavedLootEvent(eventId, profileId,
 			requiredString(root, "sessionId"), Instant.parse(requiredString(root, "observedAtUtc")),
-			requiredString(root, "source"), requiredString(root, "eventType"),
+			source, requiredString(root, "eventType"),
 			requiredInt(root, "combatLevel"), requiredInt(root, "reportedAmount"),
-			requiredInt(root, "clientTick"), items, click, expected);
+			requiredInt(root, "clientTick"), items, click, expected, gauntletOutcome);
 		if (version >= 2 && !java.util.Objects.equals(event.getActualGp(), optionalLong(root, "actualGp")))
 		{
 			throw new IllegalArgumentException("Loot event total does not match item prices");

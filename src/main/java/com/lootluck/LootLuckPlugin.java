@@ -7,6 +7,8 @@ import com.lootluck.model.ExpectedValueSnapshot;
 import com.lootluck.model.LootItemPreview;
 import com.lootluck.model.BossDefinition;
 import com.lootluck.model.BossRegistry;
+import com.lootluck.model.GauntletCompletionTracker;
+import com.lootluck.model.GauntletOutcome;
 import com.lootluck.model.NoLootConfirmation;
 import com.lootluck.model.RewardClickCandidate;
 import com.lootluck.model.ProfileDashboard;
@@ -32,7 +34,9 @@ import java.util.concurrent.RejectedExecutionException;
 import javax.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
+import net.runelite.api.GameState;
 import net.runelite.api.ItemComposition;
+import net.runelite.api.gameval.VarPlayerID;
 import net.runelite.api.events.ChatMessage;
 import net.runelite.api.events.GameTick;
 import net.runelite.api.events.MenuOptionClicked;
@@ -88,6 +92,7 @@ public class LootLuckPlugin extends Plugin
 	private volatile String currentProfileId;
 	private RewardClickCandidate recentRewardClick; // RuneLite client thread only.
 	private int lastNoLootMessageTick = -1; // RuneLite client thread only.
+	private final GauntletCompletionTracker gauntletCompletions = new GauntletCompletionTracker();
 	private ZoneId calendarZone; // RuneLite client thread only.
 	private LocalDate calendarDate; // RuneLite client thread only.
 
@@ -120,6 +125,7 @@ public class LootLuckPlugin extends Plugin
 		currentProfileId = null;
 		recentRewardClick = null;
 		lastNoLootMessageTick = -1;
+		gauntletCompletions.reset();
 		panel = null;
 		navigationButton = null;
 		log.debug("Loot Luck Tracker stopped");
@@ -165,7 +171,8 @@ public class LootLuckPlugin extends Plugin
 		if (profileKey == null || profileKey.isEmpty())
 		{
 			currentProfileId = null;
-			panel.showObservation(observation, config.showItemIds(), null);
+			panel.showObservation(observation, config.showItemIds(), null,
+				GauntletOutcome.fromLegacy(observation.getSource(), items));
 			panel.showStatistics(ProfileDashboard.empty(sessionId, Instant.now(), resolveCalendarZone()));
 			panel.showStorage("No active profile", -1, "Event not saved: profile unavailable");
 			return;
@@ -177,11 +184,20 @@ public class LootLuckPlugin extends Plugin
 		RewardClickCandidate click = boss == BossRegistry.MAGGOT_KING
 			&& recentRewardClick != null && recentRewardClick.matches(profileId, lootTick)
 			? recentRewardClick : null;
-		ExpectedValueSnapshot expected = boss.getRules().expected(click,
-			id -> itemManager.getItemPriceWithSource(id, wikiPriceSetting),
-			wikiPriceSetting ? "RUNELITE_WIKI_ADJUSTED" : "RUNELITE_JAGEX",
-			observation.getObservedAtUtc());
-		panel.showObservation(observation, config.showItemIds(), expected);
+		GauntletOutcome gauntletOutcome = GauntletOutcome.NOT_APPLICABLE;
+		if (GauntletOutcome.isGauntlet(boss))
+		{
+			observeGauntletCompletions(profileId);
+			gauntletOutcome = gauntletCompletions.classify(profileId, boss, items,
+				observation.getObservedAtUtc());
+		}
+		ExpectedValueSnapshot expected = !GauntletOutcome.isGauntlet(boss)
+			|| gauntletOutcome == GauntletOutcome.COMPLETED
+			? boss.getRules().expected(click,
+				id -> itemManager.getItemPriceWithSource(id, wikiPriceSetting),
+				wikiPriceSetting ? "RUNELITE_WIKI_ADJUSTED" : "RUNELITE_JAGEX",
+				observation.getObservedAtUtc()) : null;
+		panel.showObservation(observation, config.showItemIds(), expected, gauntletOutcome);
 		if (boss == BossRegistry.MAGGOT_KING)
 		{
 			panel.showLootCorrelation(click, lootTick);
@@ -193,7 +209,7 @@ public class LootLuckPlugin extends Plugin
 		SavedLootEvent savedEvent = new SavedLootEvent(
 			UUID.randomUUID().toString(), profileId, sessionId, observation.getObservedAtUtc(),
 			observation.getSource(), observation.getType(), event.getCombatLevel(), event.getAmount(),
-			lootTick, items, click, expected);
+			lootTick, items, click, expected, gauntletOutcome);
 		ZoneId summaryZone = resolveCalendarZone();
 		LootLuckPanel targetPanel = panel;
 		targetPanel.showStorage(shortProfileId(profileId), -1, "Saving event...");
@@ -329,6 +345,7 @@ public class LootLuckPlugin extends Plugin
 	{
 		recentRewardClick = null;
 		lastNoLootMessageTick = -1;
+		gauntletCompletions.reset();
 		if (panel != null)
 		{
 			panel.clearObservation();
@@ -349,11 +366,22 @@ public class LootLuckPlugin extends Plugin
 	@Subscribe
 	public void onGameTick(GameTick event)
 	{
+		if (panel != null && currentProfileId != null && client.getGameState() == GameState.LOGGED_IN)
+		{
+			observeGauntletCompletions(currentProfileId);
+		}
 		if (panel != null && currentProfileId != null && calendarZone != null
 			&& !LocalDate.now(calendarZone).equals(calendarDate))
 		{
 			refreshProfileCount();
 		}
+	}
+
+	private void observeGauntletCompletions(String profileId)
+	{
+		gauntletCompletions.observe(profileId,
+			client.getVarpValue(VarPlayerID.TOTAL_COMPLETED_GAUNTLET),
+			client.getVarpValue(VarPlayerID.TOTAL_COMPLETED_GAUNTLET_HM));
 	}
 
 	private void refreshProfileCount()

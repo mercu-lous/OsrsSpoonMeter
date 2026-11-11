@@ -15,6 +15,8 @@ public final class RewardStatistics
 {
 	private final int observedNormalRewards;
 	private final int observedEggRewards;
+	private final int partialGauntletRewards;
+	private final int unclassifiedGauntletRewards;
 	private final int pricedNormalRewards;
 	private final Long observedConvertedGp;
 	private final int valuedNormalRewards;
@@ -24,12 +26,15 @@ public final class RewardStatistics
 	private final Long lastRewardDeltaGp;
 
 	private RewardStatistics(int observedNormalRewards, int observedEggRewards,
+		int partialGauntletRewards, int unclassifiedGauntletRewards,
 		int pricedNormalRewards, Long observedConvertedGp, int valuedNormalRewards,
 		long convertedGp, long expectedGp,
 		Long netLuckGp, Long lastRewardDeltaGp)
 	{
 		this.observedNormalRewards = observedNormalRewards;
 		this.observedEggRewards = observedEggRewards;
+		this.partialGauntletRewards = partialGauntletRewards;
+		this.unclassifiedGauntletRewards = unclassifiedGauntletRewards;
 		this.pricedNormalRewards = pricedNormalRewards;
 		this.observedConvertedGp = observedConvertedGp;
 		this.valuedNormalRewards = valuedNormalRewards;
@@ -56,6 +61,8 @@ public final class RewardStatistics
 	{
 		int normal = 0;
 		int eggs = 0;
+		int partialGauntlet = 0;
+		int unclassifiedGauntlet = 0;
 		int priced = 0;
 		Long pricedTotal = 0L;
 		int valued = 0;
@@ -96,6 +103,19 @@ public final class RewardStatistics
 				latestNormal = groupTime;
 				lastDelta = null;
 			}
+			if (GauntletOutcome.isGauntlet(BossRegistry.findBySource(group.get(0).getSource())))
+			{
+				if (group.stream().anyMatch(event -> event.getGauntletOutcome() == GauntletOutcome.PARTIAL))
+				{
+					partialGauntlet++;
+					continue;
+				}
+				if (group.stream().anyMatch(event -> event.getGauntletOutcome() != GauntletOutcome.COMPLETED))
+				{
+					unclassifiedGauntlet++;
+					continue;
+				}
+			}
 			Long groupActual = sumDistinctCallbacks(group);
 			if (groupActual != null)
 			{
@@ -131,7 +151,8 @@ public final class RewardStatistics
 			}
 			catch (ArithmeticException overflow)
 			{
-				return new RewardStatistics(normal, eggs, priced, pricedTotal,
+				return new RewardStatistics(normal, eggs, partialGauntlet, unclassifiedGauntlet,
+					priced, pricedTotal,
 					valued, 0, 0, null, null);
 			}
 		}
@@ -144,11 +165,13 @@ public final class RewardStatistics
 			}
 			catch (ArithmeticException overflow)
 			{
-				return new RewardStatistics(normal, eggs, priced, pricedTotal,
+				return new RewardStatistics(normal, eggs, partialGauntlet, unclassifiedGauntlet,
+					priced, pricedTotal,
 					valued, actualTotal, expectedTotal, null, null);
 			}
 		}
-		return new RewardStatistics(normal, eggs, priced, pricedTotal,
+		return new RewardStatistics(normal, eggs, partialGauntlet, unclassifiedGauntlet,
+			priced, pricedTotal,
 			valued, actualTotal, expectedTotal, net, lastDelta);
 	}
 
@@ -200,6 +223,8 @@ public final class RewardStatistics
 	public int getObservedNormalRewards() { return observedNormalRewards; }
 	public int getObservedLootRewards() { return observedNormalRewards + observedEggRewards; }
 	public int getObservedEggRewards() { return observedEggRewards; }
+	public int getPartialGauntletRewards() { return partialGauntletRewards; }
+	public int getUnclassifiedGauntletRewards() { return unclassifiedGauntletRewards; }
 	public int getPricedNormalRewards() { return pricedNormalRewards; }
 	public Long getObservedConvertedGp() { return observedConvertedGp; }
 	public Long getAverageGpPerPricedReward()
